@@ -1,0 +1,1 @@
+This is a TDD based phy layer for the the RFM69 radio specifically for the PI PICO. This is a work in progress and does have some issues and remaining TODO's.
