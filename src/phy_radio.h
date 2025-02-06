@@ -34,6 +34,10 @@
 #include "pico/time.h"
 #include "c_buffer.h"
 
+#ifndef CONTAINER_OF
+#define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
+#endif
+
 // Packet sizes
 #define PHY_RADIO_SENDER_ADDR_SIZE 1
 #define PHY_RADIO_PKT_TYPE_SIZE    1

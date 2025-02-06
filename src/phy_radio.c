@@ -28,10 +28,21 @@
 
 #include "phy_radio.h"
 #include "string.h"
-#include "common.h"
 
 #define MODULO_INC(value, base) (((value) + 1) % (base))
 #define PHY_RADIO_BROADCAST_ADDR (0xFF)
+
+#ifndef LOG
+#define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
+#endif
+
+#ifndef LOG_DEBUG
+#define LOG_DEBUG(f_, ...) printf((f_), ##__VA_ARGS__)
+#endif
+
+#ifndef UNUSED
+#define UNUSED(x) (void)(x)
+#endif
 
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot);
 static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phyRadioPacket_t **data);
