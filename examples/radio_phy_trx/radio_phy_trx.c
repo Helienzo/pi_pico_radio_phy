@@ -4,6 +4,23 @@
 #include "phy_radio.h"
 #include "pico_bootsel_button.h"
 
+/*
+ This example demonstrates how to use the phyRadio module in basic ALOHA mode.
+ The phyRadio module supports many more modes of operation to enable higer througputs without
+ packet congestion in air. But that is in another example.
+
+ This example can be flashed to two PICO's with a RFM69 radio.
+ Both radios will be in RX mode waiting for packets.
+ Send a packet by pressing the pico bootsel button. This switches the radio to TX mode, sends the
+ packet and then returns to RX mode. Also known as a basic form of the ALHOA protocol.
+
+ The radio is configured in interrupt mode to notify about send complete, and packet available.
+ how ever, the callbacks are not in ISR context, they are called through the proccess function.
+
+ Note: that the example uses the broadcast address to enable flashing multiple devices without changing addresses.
+       all devices will receive the packet sent. (Excluding the sender)
+*/
+
 // Radio configuration defines
 #define RADIO_MY_ADDR         (0x02) // Change this to target specific radios
 #define RADIO_TARGET_ADDR     (0x01) // Change this to target specific radios
