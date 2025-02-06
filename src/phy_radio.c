@@ -30,7 +30,6 @@
 #include "string.h"
 
 #define MODULO_INC(value, base) (((value) + 1) % (base))
-#define PHY_RADIO_BROADCAST_ADDR (0xFF)
 
 #ifndef LOG
 #define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
@@ -325,6 +324,10 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
                 LOG("Return to RX failed %i\n", res);
                 return res;
             }
+
+            inst->tdma_scheduler.in_flight   = false;
+            inst->tdma_scheduler.active_item = NULL;
+
             // Indicate to hal not to change any internal state
             return HAL_RADIO_CB_DO_NOTHING;
         } break;
@@ -1048,6 +1051,7 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
         .broadcast_address = PHY_RADIO_BROADCAST_ADDR,
         .rx_address = address,
         .channel    = PHY_RADIO_DEFAULT_CHANNEL,
+        .power_dbm  = PHY_RADIO_DEFAULT_TX_POWER_DBM,
     };
 
     int32_t res = halRadioInit(&inst->hal_radio_inst, hal_config);
@@ -1202,6 +1206,9 @@ static inline int32_t sendAloha(phyRadio_t *inst, phyRadioPacket_t* packet) {
         LOG("Send Failed\n");
         return res;
     }
+
+    inst->tdma_scheduler.active_item = packet;
+    inst->tdma_scheduler.in_flight   = true;
 
     return PHY_RADIO_SUCCESS;
 }
