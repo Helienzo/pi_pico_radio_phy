@@ -5,14 +5,16 @@
 #include "pico_bootsel_button.h"
 
 /*
- This example demonstrates how to use the phyRadio module in basic ALOHA mode.
- The phyRadio module supports many more modes of operation to enable higer througputs without
- packet congestion in air. But that is in another example.
+ This example demonstrates how to use the phyRadio module in as a central device.
+ The Central device send out a regular sync packet that provides a time reference for peripheral
+ devices and allows them to send data at the correct timing.
+
+ The purpose of using TDD is to allow maximum throughput and minimizing collisions, by knowing when to send and when
+ to listen the risk of colision is very small and all time can be utelized.
+
+ NOTE: Using this code with a radio might not be legal. Allways follow your local radio spectrum regulations.
 
  This example can be flashed to two PICO's with a RFM69 radio.
- Both radios will be in RX mode waiting for packets.
- Send a packet by pressing the pico bootsel button. This switches the radio to TX mode, sends the
- packet and then returns to RX mode. Also known as a basic form of the ALHOA protocol.
 
  The radio is configured in interrupt mode to notify about send complete, and packet available.
  how ever, the callbacks are not in ISR context, they are called through the proccess function.
