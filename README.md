@@ -15,5 +15,5 @@ PICO 20 - RESET
 PICO 21 - DIO0  
   
 ## Known limitations
- The TDD mode currently only supports two devices in a point to point communication mode.
+ The TDD mode currently only supports two devices in a point to point communication mode.  
  There might be issues when trying to send close to max throughput, Im working on that..
