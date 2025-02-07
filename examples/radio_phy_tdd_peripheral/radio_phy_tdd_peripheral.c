@@ -5,20 +5,23 @@
 #include "pico_bootsel_button.h"
 
 /*
- This example demonstrates how to use the phyRadio module in as a peripheral device.
- The peripheral device scans for sync messages sent by a central device.
+ This example demonstrates how to use the phyRadio module as a peripheral device.
+ The peripheral device scans for sync messages sent by a central device and synchronizes once detected.
 
  The purpose of using TDD is to allow maximum throughput and minimizing collisions, by knowing when to send and when
  to listen the risk of colision is very small and all time can be utelized.
 
  NOTE: Using this code with a radio might not be legal. Allways follow your local radio spectrum regulations.
 
- This example can be flashed to two PICO's with a RFM69 radio.
+ This example should be used together with the central example on two PICO's with a RFM69 radio.
+
+ The example works best if a second LED is connected GPIO 9 to show when packets arrive. The PICO on board
+ LED is used to show synchronization.
 
  The radio is configured in interrupt mode to notify about send complete, and packet available.
  how ever, the callbacks are not in ISR context, they are called through the proccess function.
 
- Note: that the example uses the broadcast address to enable flashing multiple devices without changing addresses.
+ Note: The example uses the broadcast address to enable flashing multiple devices without changing addresses.
        all devices will receive the packet sent. (Excluding the sender)
 */
 
@@ -30,6 +33,7 @@
 #define RADIO_RX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD)
 #define RADIO_TX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD) 
 #define RADIO_TX_POWER_DBM    (0)
+#define PKT_LED               (9)
 
 #ifndef LOG
 #define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
@@ -56,6 +60,7 @@ typedef struct {
 
     // LED management
     bool test_led_state;
+    bool pkt_led_state;
 } myInstance_t;
 
 static myInstance_t my_instance = {0};
@@ -66,6 +71,8 @@ int pico_led_init(void) {
     // so we can use normal GPIO functionality to turn the led on and off
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    gpio_init(PKT_LED);
+    gpio_set_dir(PKT_LED, GPIO_OUT);
     return PICO_OK;
 }
 
@@ -73,6 +80,12 @@ int pico_led_init(void) {
 void pico_set_led(bool led_on) {
     // Just set the GPIO on or off
     gpio_put(PICO_DEFAULT_LED_PIN, led_on);
+}
+
+// Turn the led on or off
+void set_pkt_led(bool led_on) {
+    // Just set the GPIO on or off
+    gpio_put(PKT_LED, led_on);
 }
 
 void buttonEventCb(picoBootSelButtonInterface_t *interface, picoBootSelButtonEvent_t event) {
@@ -104,8 +117,8 @@ void buttonEventCb(picoBootSelButtonInterface_t *interface, picoBootSelButtonEve
 static int32_t phyPacketCallback(phyRadioInterface_t *interface, phyRadioPacket_t *packet) {
     myInstance_t * inst = CONTAINER_OF(interface, myInstance_t, phy_interface);
 
-    inst->test_led_state = !inst->test_led_state;
-    pico_set_led(inst->test_led_state);
+    inst->pkt_led_state = !inst->pkt_led_state;
+    set_pkt_led(inst->pkt_led_state);
 
     int32_t result = cBufferAvailableForRead(packet->pkt_buffer);
 
@@ -150,13 +163,16 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            break;
         case PHY_RADIO_FIRST_SYNC:
            // Successfully synchronized with a central device
-
+           inst->test_led_state = true;
+           pico_set_led(inst->test_led_state);
            // The information regarding what slot to send on is provided in the sync state
            inst->phy_pkt.slot = sync_state->tx_slot_number;
            LOG("SYNCHRONIZED!\n");
            break;
         case PHY_RADIO_RE_SYNC:
            // Called every time a new sync is heard,
+           inst->test_led_state = !inst->test_led_state;
+           pico_set_led(inst->test_led_state);
            // and successfully synchronized to a central device
            break;
         case PHY_RADIO_CONFLICT_SYNC:
@@ -165,6 +181,8 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            break;
         case PHY_RADIO_SYNC_LOST:
            LOG("SYNC LOST!\n");
+           inst->test_led_state = false;
+           pico_set_led(inst->test_led_state);
            // Called no sync has been heard for X frames
            break;
         case PHY_RADIO_RX_SLOT_START:
