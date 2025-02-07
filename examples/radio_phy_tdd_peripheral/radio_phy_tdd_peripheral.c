@@ -156,6 +156,7 @@ static int32_t phyPacketSent(phyRadioInterface_t *interface, phyRadioPacket_t *p
 
 static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, const phyRadioSyncState_t *sync_state) {
     myInstance_t * inst = CONTAINER_OF(interface, myInstance_t, phy_interface);
+    int32_t retval = PHY_RADIO_SUCCESS;
 
     switch (sync_id) {
         case PHY_RADIO_SYNC_SENT:
@@ -167,6 +168,8 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            pico_set_led(inst->test_led_state);
            // The information regarding what slot to send on is provided in the sync state
            inst->phy_pkt.slot = sync_state->tx_slot_number;
+           // Set peripheral mode
+           retval = PHY_RADIO_CB_SET_PERIPHERAL;
            LOG("SYNCHRONIZED!\n");
            break;
         case PHY_RADIO_RE_SYNC:
@@ -180,10 +183,12 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            // Called if a sync from another central device is heard
            break;
         case PHY_RADIO_SYNC_LOST:
-           LOG("SYNC LOST!\n");
+           // Called no sync has been heard for X frames
            inst->test_led_state = false;
            pico_set_led(inst->test_led_state);
-           // Called no sync has been heard for X frames
+           // Return to scan mode
+           retval = PHY_RADIO_CB_SET_SCAN;
+           LOG("SYNC LOST!\n");
            break;
         case PHY_RADIO_RX_SLOT_START:
            // Called once every time a new RX slot starts
@@ -196,7 +201,7 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
             return PHY_RADIO_CB_ERROR_INVALID;
     }
 
-    return PHY_RADIO_CB_SUCCESS;
+    return retval;
 }
 
 int main()

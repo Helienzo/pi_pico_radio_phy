@@ -491,10 +491,11 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
 
                 // Manage the callback result
                 switch (cb_res) {
-                    case PHY_RADIO_CB_SUCCESS:
-                        break;
                     case PHY_RADIO_CB_SET_PERIPHERAL:
+                        // We are allready in peripheral mode
                         break;
+                    case PHY_RADIO_CB_SUCCESS:
+                        // Return to scan mode
                     case PHY_RADIO_CB_SET_SCAN: {
                         // Reset the sync state, TODO fix assignment
                         inst->sync_state.tx_slot_number = PHY_RADIO_PERIPHERAL_TX_SLOT;
