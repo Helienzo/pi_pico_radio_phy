@@ -34,6 +34,10 @@
 #include "pico/time.h"
 #include "c_buffer.h"
 
+#ifndef CONTAINER_OF
+#define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
+#endif
+
 // Packet sizes
 #define PHY_RADIO_SENDER_ADDR_SIZE 1
 #define PHY_RADIO_PKT_TYPE_SIZE    1
@@ -46,7 +50,6 @@
  * latency in us is 8191. Bitrates lower than this risk overshooting.
 */
 // Sync message and time synchronization
-#define PHY_RADIO_BIT_RATE                HAL_RADIO_BITRATE_150
 #define PHY_RADIO_TX_TIME_SIZE            1
 #define PHY_RADIO_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_TX_TIME_SIZE)
 #define PHY_RADIO_SYNC_MSG_MAX_TIME       8191 // 2^13 - 1
@@ -75,7 +78,10 @@
 #define HAL_RADIO_PIN_TX_RX (22)
 
 // Radio configuration
-#define PHY_RADIO_DEFAULT_CHANNEL 868
+#define PHY_RADIO_DEFAULT_CHANNEL      (868)
+#define PHY_RADIO_BIT_RATE             (HAL_RADIO_BITRATE_150)
+#define PHY_RADIO_DEFAULT_TX_POWER_DBM (0)
+#define PHY_RADIO_BROADCAST_ADDR       (0xFF)
 
 typedef enum {
     PHY_RADIO_SUCCESS,
