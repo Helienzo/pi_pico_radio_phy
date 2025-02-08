@@ -85,8 +85,8 @@ pico_set_program_name(radio_phy_tdd_peripheral "radio_phy_tdd_peripheral")
 pico_set_program_version(radio_phy_tdd_peripheral "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(radio_phy_tdd_peripheral 0)
-pico_enable_stdio_usb(radio_phy_tdd_peripheral 0)
+pico_enable_stdio_uart(radio_phy_tdd_peripheral 1)
+pico_enable_stdio_usb(radio_phy_tdd_peripheral 1)
 
 # Add the standard library to the build
 target_link_libraries(radio_phy_tdd_peripheral
