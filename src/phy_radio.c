@@ -354,11 +354,13 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
 
     if (inst->sync_state.mode == PHY_RADIO_MODE_PERIPHERAL) {
         // Resync the repeating timer
-        if (!cancel_repeating_timer(&inst->timer)) {
-            LOG_DEBUG("Timer error %i\n", 4);
-            return PHY_RADIO_TIMER_ERROR;
+        if (inst->timer_active) {
+            if (!cancel_repeating_timer(&inst->timer)) {
+                LOG_DEBUG("Timer error %i\n", 4);
+                return PHY_RADIO_TIMER_ERROR;
+            }
+            inst->timer_active = false;
         }
-        inst->timer_active = false;
 
         // Compute when the next slot should start
         uint64_t next_slot_start = inst->tdma_scheduler.slot_duration - sync_time;
