@@ -225,6 +225,7 @@ typedef struct {
     alarm_id_t         prepare_alarm_id;
     alarm_id_t         sync_alarm_id;
     uint64_t           pkt_sent_time;
+    uint32_t           scan_timeout_ms;
 
     // Superframe management
     uint32_t superslot_counter; // Keeping track of number of slots in a superframe

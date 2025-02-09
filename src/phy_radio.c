@@ -536,7 +536,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Return to scan mode
-                        if ((res = phyRadioSetScanMode(inst, 0)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -591,7 +591,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Go to scan mode
-                        if ((res = phyRadioSetScanMode(inst, 0)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -657,7 +657,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Go to scan mode
-                        if ((res = phyRadioSetScanMode(inst, 0)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -980,7 +980,7 @@ static int32_t processPeripheral(phyRadio_t *inst) {
                 }
 
                 // Go to scan mode
-                if ((result = phyRadioSetScanMode(inst, 0)) != PHY_RADIO_SUCCESS) {
+                if ((result = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
                     return result;
                 }
             } break;
@@ -1123,6 +1123,7 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
     inst->sync_packet.addr = PHY_RADIO_BROADCAST_ADDR;
     inst->sync_packet.type = PHY_RADIO_PKT_INTERNAL_SYNC;
     inst->sync_packet.slot = 0;
+    inst->tdma_scheduler.scan_timeout_ms = 0;
     inst->sync_packet.pkt_buffer = &inst->sync_message_buf;
 
     // Init the RX buffer
@@ -1158,6 +1159,8 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
             return PHY_RADIO_TIMER_ERROR;
         }
     }
+
+    inst->tdma_scheduler.scan_timeout_ms = timeout_ms;
 
     inst->sync_state.mode = PHY_RADIO_MODE_SCAN;
 
