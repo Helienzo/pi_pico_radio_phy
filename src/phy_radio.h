@@ -60,7 +60,7 @@
 
 // TDMA parameters
 #define PHY_RADIO_NUM_SLOTS          2
-#define PHY_RADIO_NUM_ITEMS_SLOTS    2
+#define PHY_RADIO_NUM_ITEMS_SLOTS    3
 #define PHY_RADIO_SUPERFRAME_LEN     20
 #define PHY_RADIO_SYNC_TIMEOUT       3
 #define PHY_RADIO_PERIPHERAL_TX_SLOT 1
@@ -70,6 +70,7 @@
 #define PHY_RADIO_SLOT_TIME_US  (20000)
 #define PHY_RADIO_GUARD_TIME_US (1000)
 #define PHY_RADIO_SUPERFRAME_TIME_US (PHY_RADIO_SLOT_TIME_US * PHY_RADIO_SUPERFRAME_LEN)
+#define PHY_RADIO_SUPERFRAME_TIME_MS (PHY_RADIO_SUPERFRAME_TIME_US/1000)
 
 // Guard time before the next slot start enables preparing the radio for the next slot
 #define PHY_RADIO_TX_PREPARE_US (PHY_RADIO_SLOT_TIME_US - PHY_RADIO_GUARD_TIME_US)
@@ -142,6 +143,7 @@ typedef enum {
     PHY_RADIO_SYNC_LOST,     // On new sync message during peripheral mode
     PHY_RADIO_RX_SLOT_START, // At the start of a RX slot
     PHY_RADIO_TX_SLOT_START, // At the start of TX slot (Ater the first package is triggered)
+    PHY_RADIO_SCAN_TIMEOUT,  // If a scan timed out with no device found
 } phyRadioSyncId_t;
 
 typedef struct phyRadioInterface phyRadioInterface_t;
@@ -224,6 +226,7 @@ typedef struct {
     alarm_id_t         prepare_alarm_id;
     alarm_id_t         sync_alarm_id;
     uint64_t           pkt_sent_time;
+    uint32_t           scan_timeout_ms;
 
     // Superframe management
     uint32_t superslot_counter; // Keeping track of number of slots in a superframe
@@ -302,9 +305,11 @@ int32_t phyRadioProcess(phyRadio_t *inst);
 /**
  * Scan for other phyRadio device
  * Input: phyRadio instance
+ * Input: Timeout time in ms, if not device is found a sync_state_callback is called,
+ *        If the timeout is set to 0 the scan is indefinate.
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioSetScanMode(phyRadio_t *inst);
+int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms);
 
 /**
  * Set central mode look for incomming connections
