@@ -2,6 +2,7 @@
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 #include "phy_radio.h"
+#include "hal_gpio.h"
 #include "pico_bootsel_button.h"
 
 /*
@@ -26,8 +27,8 @@
 */
 
 // Radio configuration defines
-#define RADIO_MY_ADDR         (0x02) // Change this to target specific radios
-#define RADIO_TARGET_ADDR     (0x01) // Change this to target specific radios
+#define RADIO_MY_ADDR         (0x01) // Change this to target specific radios
+#define RADIO_TARGET_ADDR     (0x02) // Change this to target specific radios
 #define RADIO_BROADCAST_ADDR  (0xFF)
 #define RADIO_DEFAULT_CHANNEL (868)
 #define RADIO_RX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD)
@@ -207,6 +208,8 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
 int main()
 {
     stdio_init_all();
+    // Initialize the gpio module to make sure all modules can use it
+    halGpioInit();
     int rc = pico_led_init();
     hard_assert(rc == PICO_OK);
 
