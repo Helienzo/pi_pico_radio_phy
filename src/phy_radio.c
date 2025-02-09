@@ -52,8 +52,23 @@ static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phy
 bool repeating_timer_callback(__unused struct repeating_timer *t);
 static int64_t prepare_alarm_callback(alarm_id_t id, void *user_data);
 static int64_t timer_alarm_callback(alarm_id_t id, void *user_data);
+static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data);
 static int32_t cancelAllTimers(phyRadio_t *inst);
 static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t* packet);
+
+static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
+    // Get the current phy radio instance
+    phyRadio_t *inst =  (phyRadio_t*)user_data;
+
+    // No device was found during scan
+    // Reset the the alarm ID.
+    inst->tdma_scheduler.sync_alarm_id = 0;
+
+    // Set the interrupt flag, and manage this is the main context
+    inst->timer_interrupt = true;
+
+    return 0;
+}
 
 // This alarm is used to synchronize with a central device
 static int64_t timer_alarm_callback(alarm_id_t id, void *user_data) {
@@ -521,7 +536,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Return to scan mode
-                        if ((res = phyRadioSetScanMode(inst)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, 0)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -576,7 +591,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Go to scan mode
-                        if ((res = phyRadioSetScanMode(inst)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, 0)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -642,7 +657,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Go to scan mode
-                        if ((res = phyRadioSetScanMode(inst)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, 0)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -901,7 +916,13 @@ static int32_t processCentral(phyRadio_t *inst) {
 }
 
 static int32_t processScan(phyRadio_t *inst) {
-    UNUSED(inst);
+    int32_t res = PHY_RADIO_SUCCESS;
+
+    // The only way we end up here is if the scan timed out, notify
+    if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_SCAN_TIMEOUT, &inst->sync_state)) < PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
     return PHY_RADIO_SUCCESS;
 }
 
@@ -959,7 +980,7 @@ static int32_t processPeripheral(phyRadio_t *inst) {
                 }
 
                 // Go to scan mode
-                if ((result = phyRadioSetScanMode(inst)) != PHY_RADIO_SUCCESS) {
+                if ((result = phyRadioSetScanMode(inst, 0)) != PHY_RADIO_SUCCESS) {
                     return result;
                 }
             } break;
@@ -1112,8 +1133,8 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
     return PHY_RADIO_SUCCESS;
 }
 
-int32_t phyRadioSetScanMode(phyRadio_t *inst) {
-    if (inst == NULL) {
+int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
+    if ((inst == NULL) || (inst->interface == NULL)) {
         return PHY_RADIO_NULL_ERROR;
     }
 
@@ -1131,6 +1152,13 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst) {
         return res;
     }
 
+    if (timeout_ms > 0) {
+        if ((inst->tdma_scheduler.sync_alarm_id = add_alarm_in_ms(timeout_ms, scan_timer_alarm_callback, inst, true)) < 0) {
+            LOG_DEBUG("Timer error %i\n", 5);
+            return PHY_RADIO_TIMER_ERROR;
+        }
+    }
+
     inst->sync_state.mode = PHY_RADIO_MODE_SCAN;
 
     // Reset all counters
@@ -1142,7 +1170,7 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst) {
 }
 
 int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
-    if (inst == NULL) {
+    if ((inst == NULL) || (inst->interface == NULL)) {
         return PHY_RADIO_NULL_ERROR;
     }
 

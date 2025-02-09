@@ -142,6 +142,7 @@ typedef enum {
     PHY_RADIO_SYNC_LOST,     // On new sync message during peripheral mode
     PHY_RADIO_RX_SLOT_START, // At the start of a RX slot
     PHY_RADIO_TX_SLOT_START, // At the start of TX slot (Ater the first package is triggered)
+    PHY_RADIO_SCAN_TIMEOUT,  // If a scan timed out with no device found
 } phyRadioSyncId_t;
 
 typedef struct phyRadioInterface phyRadioInterface_t;
@@ -302,9 +303,11 @@ int32_t phyRadioProcess(phyRadio_t *inst);
 /**
  * Scan for other phyRadio device
  * Input: phyRadio instance
+ * Input: Timeout time in ms, if not device is found a sync_state_callback is called,
+ *        If the timeout is set to 0 the scan is indefinate.
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioSetScanMode(phyRadio_t *inst);
+int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms);
 
 /**
  * Set central mode look for incomming connections
