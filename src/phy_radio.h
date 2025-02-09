@@ -60,7 +60,7 @@
 
 // TDMA parameters
 #define PHY_RADIO_NUM_SLOTS          2
-#define PHY_RADIO_NUM_ITEMS_SLOTS    2
+#define PHY_RADIO_NUM_ITEMS_SLOTS    3
 #define PHY_RADIO_SUPERFRAME_LEN     20
 #define PHY_RADIO_SYNC_TIMEOUT       3
 #define PHY_RADIO_PERIPHERAL_TX_SLOT 1
