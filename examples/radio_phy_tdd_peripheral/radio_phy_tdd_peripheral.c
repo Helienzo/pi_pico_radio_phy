@@ -35,6 +35,7 @@
 #define RADIO_TX_BUFFER_SIZE  (128 + C_BUFFER_ARRAY_OVERHEAD) 
 #define RADIO_TX_POWER_DBM    (0)
 #define PKT_LED               (9)
+#define SCAN_TIMEOUT_MS       (2000)
 
 #ifndef LOG
 #define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
@@ -197,6 +198,14 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
         case PHY_RADIO_TX_SLOT_START:
            // Called once every time a new TX slot starts
            break;
+        case PHY_RADIO_SCAN_TIMEOUT:
+           // Scan timeout, no device found
+           int32_t res = phyRadioSetScanMode(inst, SCAN_TIMEOUT_MS);
+           if (res != PHY_RADIO_SUCCESS) {
+               return res;
+           }
+           LOG("SCAN TIMEOUT, NO DEVICE FOUND!\n");
+           break;
         default:
             // We should never end up here!
             return PHY_RADIO_CB_ERROR_INVALID;
@@ -233,7 +242,7 @@ int main()
     }
 
     // Set phy radio mode
-    if ((res = phyRadioSetScanMode(&my_instance.phy_radio_inst)) != PHY_RADIO_SUCCESS) {
+    if ((res = phyRadioSetScanMode(&my_instance.phy_radio_inst, SCAN_TIMEOUT_MS)) != PHY_RADIO_SUCCESS) {
         LOG("RADIO SET MODE FAILED! %i\n", res);
         device_error();
     }

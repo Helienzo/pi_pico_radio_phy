@@ -765,10 +765,26 @@ static int32_t queuePeakOnSlot(phyRadioTdma_t*     scheduler,
     return result;
 }
 
-static void queueClearSlot(phyRadioTdma_t* scheduler,
-                           uint8_t         slot)
+static int32_t queueClearSlot(phyRadioTdma_t* scheduler,
+                              uint8_t         slot)
 {
-    staticQueueClear(&scheduler->slot[slot].static_queue);
+    return staticQueueClear(&scheduler->slot[slot].static_queue);
+}
+
+static int32_t clearPacketQueue(phyRadioTdma_t *inst) {
+    int32_t res = PHY_RADIO_SUCCESS;
+
+    // Clear the queue of any active messages
+    inst->active_item = NULL;
+    inst->in_flight = false;
+    for (uint8_t slot = 0; slot < PHY_RADIO_NUM_SLOTS; slot++) {
+        if ((res = queueClearSlot(inst, slot)) != STATIC_QUEUE_SUCCESS) {
+            return res;
+        }
+
+    }
+
+    return res;
 }
 
 static int32_t initTdmaScheduler(phyRadioTdma_t *inst) {
@@ -1142,6 +1158,11 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
     int32_t res = PHY_RADIO_SUCCESS;
     // Cancel any active timers
     if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
+    // Clear the packet queue in all slots
+    if ((res = clearPacketQueue(&inst->tdma_scheduler)) != STATIC_QUEUE_SUCCESS) {
         return res;
     }
 
