@@ -890,12 +890,6 @@ static int32_t processCentral(phyRadio_t *inst) {
                 // The sync is in transit, TODO fix assignment
                 inst->sync_state.tx_slot_number = PHY_RADIO_CENTRAL_TX_SLOT;
                 inst->sync_state.central_address = inst->my_address;
-
-                // If the callback returns bad values stop and return errors
-                if (res < PHY_RADIO_CB_SUCCESS) {
-                    LOG("PHY CB Error %i!\n", res);
-                    return res;
-                }
             }
 
             // Send the next package
