@@ -2,6 +2,7 @@
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 #include "phy_radio.h"
+#include "hal_gpio.h"
 #include "pico_bootsel_button.h"
 
 /*
@@ -199,6 +200,8 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
 int main()
 {
     stdio_init_all();
+    // Initialize the gpio module to make sure all modules can use it
+    halGpioInit();
     int rc = pico_led_init();
     hard_assert(rc == PICO_OK);
 

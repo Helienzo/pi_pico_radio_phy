@@ -52,8 +52,23 @@ static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phy
 bool repeating_timer_callback(__unused struct repeating_timer *t);
 static int64_t prepare_alarm_callback(alarm_id_t id, void *user_data);
 static int64_t timer_alarm_callback(alarm_id_t id, void *user_data);
+static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data);
 static int32_t cancelAllTimers(phyRadio_t *inst);
 static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t* packet);
+
+static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
+    // Get the current phy radio instance
+    phyRadio_t *inst =  (phyRadio_t*)user_data;
+
+    // No device was found during scan
+    // Reset the the alarm ID.
+    inst->tdma_scheduler.sync_alarm_id = 0;
+
+    // Set the interrupt flag, and manage this is the main context
+    inst->timer_interrupt = true;
+
+    return 0;
+}
 
 // This alarm is used to synchronize with a central device
 static int64_t timer_alarm_callback(alarm_id_t id, void *user_data) {
@@ -307,9 +322,17 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
                 if (inst->tdma_scheduler.pkt_sent_time < PHY_RADIO_SYNC_MSG_MAX_TIME) {
                     inst->tdma_scheduler.central_sync_msg_time = (uint16_t)inst->tdma_scheduler.pkt_sent_time;
                 }
+
+                // Notify that a sync has been sent
+                int32_t res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_SYNC_SENT, &inst->sync_state);
+                if (res < HAL_RADIO_CB_SUCCESS) {
+                    // Clean up then return error
+                    inst->tdma_scheduler.in_flight   = false;
+                    inst->tdma_scheduler.active_item = NULL;
+                    return res;
+                }
             }
 
-            // Fall through, for now we just return to RX mode when in central mode
             inst->tdma_scheduler.in_flight   = false;
             inst->tdma_scheduler.active_item = NULL;
 
@@ -521,7 +544,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Return to scan mode
-                        if ((res = phyRadioSetScanMode(inst)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -576,7 +599,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Go to scan mode
-                        if ((res = phyRadioSetScanMode(inst)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -642,7 +665,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
 
                         // Go to scan mode
-                        if ((res = phyRadioSetScanMode(inst)) != PHY_RADIO_SUCCESS) {
+                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
                             return res;
                         }
                     } break;
@@ -750,10 +773,26 @@ static int32_t queuePeakOnSlot(phyRadioTdma_t*     scheduler,
     return result;
 }
 
-static void queueClearSlot(phyRadioTdma_t* scheduler,
-                           uint8_t         slot)
+static int32_t queueClearSlot(phyRadioTdma_t* scheduler,
+                              uint8_t         slot)
 {
-    staticQueueClear(&scheduler->slot[slot].static_queue);
+    return staticQueueClear(&scheduler->slot[slot].static_queue);
+}
+
+static int32_t clearPacketQueue(phyRadioTdma_t *inst) {
+    int32_t res = PHY_RADIO_SUCCESS;
+
+    // Clear the queue of any active messages
+    inst->active_item = NULL;
+    inst->in_flight = false;
+    for (uint8_t slot = 0; slot < PHY_RADIO_NUM_SLOTS; slot++) {
+        if ((res = queueClearSlot(inst, slot)) != STATIC_QUEUE_SUCCESS) {
+            return res;
+        }
+
+    }
+
+    return res;
 }
 
 static int32_t initTdmaScheduler(phyRadioTdma_t *inst) {
@@ -848,16 +887,9 @@ static int32_t processCentral(phyRadio_t *inst) {
         case PHY_RADIO_SLOT_TX: {
             // Notify that sync has been sent
             if (tdma_scheduler->superslot_counter == 0) {
-                // Notify that sync has been sent, TODO fix assignment
+                // The sync is in transit, TODO fix assignment
                 inst->sync_state.tx_slot_number = PHY_RADIO_CENTRAL_TX_SLOT;
                 inst->sync_state.central_address = inst->my_address;
-                res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_SYNC_SENT, &inst->sync_state);
-
-                // If the callback returns bad values stop and return errors
-                if (res < PHY_RADIO_CB_SUCCESS) {
-                    LOG("PHY CB Error %i!\n", res);
-                    return res;
-                }
             }
 
             // Send the next package
@@ -901,7 +933,13 @@ static int32_t processCentral(phyRadio_t *inst) {
 }
 
 static int32_t processScan(phyRadio_t *inst) {
-    UNUSED(inst);
+    int32_t res = PHY_RADIO_SUCCESS;
+
+    // The only way we end up here is if the scan timed out, notify
+    if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_SCAN_TIMEOUT, &inst->sync_state)) < PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
     return PHY_RADIO_SUCCESS;
 }
 
@@ -959,7 +997,7 @@ static int32_t processPeripheral(phyRadio_t *inst) {
                 }
 
                 // Go to scan mode
-                if ((result = phyRadioSetScanMode(inst)) != PHY_RADIO_SUCCESS) {
+                if ((result = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
                     return result;
                 }
             } break;
@@ -1102,6 +1140,7 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
     inst->sync_packet.addr = PHY_RADIO_BROADCAST_ADDR;
     inst->sync_packet.type = PHY_RADIO_PKT_INTERNAL_SYNC;
     inst->sync_packet.slot = 0;
+    inst->tdma_scheduler.scan_timeout_ms = 0;
     inst->sync_packet.pkt_buffer = &inst->sync_message_buf;
 
     // Init the RX buffer
@@ -1112,14 +1151,19 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
     return PHY_RADIO_SUCCESS;
 }
 
-int32_t phyRadioSetScanMode(phyRadio_t *inst) {
-    if (inst == NULL) {
+int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
+    if ((inst == NULL) || (inst->interface == NULL)) {
         return PHY_RADIO_NULL_ERROR;
     }
 
     int32_t res = PHY_RADIO_SUCCESS;
     // Cancel any active timers
     if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
+    // Clear the packet queue in all slots
+    if ((res = clearPacketQueue(&inst->tdma_scheduler)) != STATIC_QUEUE_SUCCESS) {
         return res;
     }
 
@@ -1130,6 +1174,15 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst) {
     if (res != HAL_RADIO_SUCCESS) {
         return res;
     }
+
+    if (timeout_ms > 0) {
+        if ((inst->tdma_scheduler.sync_alarm_id = add_alarm_in_ms(timeout_ms, scan_timer_alarm_callback, inst, true)) < 0) {
+            LOG_DEBUG("Timer error %i\n", 5);
+            return PHY_RADIO_TIMER_ERROR;
+        }
+    }
+
+    inst->tdma_scheduler.scan_timeout_ms = timeout_ms;
 
     inst->sync_state.mode = PHY_RADIO_MODE_SCAN;
 
@@ -1142,7 +1195,7 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst) {
 }
 
 int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
-    if (inst == NULL) {
+    if ((inst == NULL) || (inst->interface == NULL)) {
         return PHY_RADIO_NULL_ERROR;
     }
 
@@ -1153,6 +1206,11 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     }
 
     inst->sync_state.mode = PHY_RADIO_MODE_CENTRAL;
+
+    if ((res = initTdmaScheduler(&inst->tdma_scheduler)) != PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
     // Start broadcasting a sync message to enable other units to adjust their clocks
 
     if (!add_repeating_timer_us(PHY_RADIO_SLOT_TIME_US, repeating_timer_callback, inst, &inst->timer)) {
@@ -1160,11 +1218,6 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
         return PHY_RADIO_TIMER_ERROR;
     }
     inst->timer_active = true;
-
-    // Reset all counters
-    inst->tdma_scheduler.current_slot = 0;
-    inst->tdma_scheduler.superslot_counter = 0;
-    inst->tdma_scheduler.sync_counter = 0;
 
     return PHY_RADIO_SUCCESS;
 }
