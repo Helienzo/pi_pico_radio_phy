@@ -89,8 +89,11 @@ static int64_t timer_alarm_callback(alarm_id_t id, void *user_data) {
     // Check what slot we are currently in
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
         case PHY_RADIO_SLOT_TX: {
+
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
             // Inidicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 1);
+#endif
 
             // Trigger send of a queued packet
             int32_t res = halRadioQueueSend(&inst->hal_radio_inst);
@@ -101,8 +104,10 @@ static int64_t timer_alarm_callback(alarm_id_t id, void *user_data) {
         } break;
         case PHY_RADIO_SLOT_RX:
             // If this is the case we are allready in RX mode
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
             // Inidicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 0);
+#endif
             break;
         default:
             // Do nothing
@@ -223,8 +228,10 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
     // Check what slot we are currently in
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
         case PHY_RADIO_SLOT_TX: {
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
             // Inidicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 1);
+#endif
 
             // Store the absolute time when this packet tx started
             inst->tdma_scheduler.pkt_sent_time = time_us_64();
@@ -238,8 +245,10 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
         } break;
         case PHY_RADIO_SLOT_RX:
             // If this is the case we are allready in RX mode
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
             // Inidicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 0);
+#endif
             break;
         default:
             // Do nothing
@@ -1128,9 +1137,11 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
     // Calculate a best effort sync message time estimate to initialize this value
     inst->tdma_scheduler.central_sync_msg_time = halRadioBitRateToDelayUs(&inst->hal_radio_inst, hal_config.bitrate, PHY_RADIO_SYNC_MSG_SIZE);
 
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
     // Init the TX RX GPIO
     gpio_init(HAL_RADIO_PIN_TX_RX);
     gpio_set_dir(HAL_RADIO_PIN_TX_RX, GPIO_OUT);
+#endif
 
     // Init the sync package
     if(cBufferInit(&inst->sync_message_buf, inst->sync_message_array, PHY_RADIO_SYNC_MSG_SIZE + 1 + HAL_RADIO_PACKET_OVERHEAD) != C_BUFFER_SUCCESS) {
