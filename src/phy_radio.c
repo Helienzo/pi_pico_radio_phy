@@ -788,17 +788,40 @@ static int32_t queueClearSlot(phyRadioTdma_t* scheduler,
     return staticQueueClear(&scheduler->slot[slot].static_queue);
 }
 
-static int32_t clearPacketQueue(phyRadioTdma_t *inst) {
+static int32_t clearAndNotifyPacketQueue(phyRadio_t *inst, phyRadioTdma_t *scheduler) {
     int32_t res = PHY_RADIO_SUCCESS;
 
-    // Clear the queue of any active messages
-    inst->active_item = NULL;
-    inst->in_flight = false;
-    for (uint8_t slot = 0; slot < PHY_RADIO_NUM_SLOTS; slot++) {
-        if ((res = queueClearSlot(inst, slot)) != STATIC_QUEUE_SUCCESS) {
-            return res;
+    // Check if there is an active packet, if there is cancel it
+    if (scheduler->in_flight && (scheduler->active_item != NULL)) {
+        // Notify that the active packet failed
+        if (scheduler->active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
+            if ((res = inst->interface->sent_cb(inst->interface, scheduler->active_item, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+                return res;
+            }
+            scheduler->in_flight = false;
         }
+    }
+    scheduler->active_item = NULL;
 
+    // Clear the queue of any active messages
+    for (uint8_t slot = 0; slot < PHY_RADIO_NUM_SLOTS; slot++) {
+
+        phyRadioPacket_t* phy_packet = NULL;
+        while(!staticQueueEmpty(&scheduler->slot[slot].static_queue)) {
+            if ((res = queuePopFromSlot(scheduler, slot, &phy_packet)) != STATIC_QUEUE_SUCCESS) {
+                if (res == STATIC_QUEUE_EMPTY) {
+                    break;
+                }
+                return PHY_RADIO_QUEUE_ERROR;
+            }
+
+            // Notify that the packet failed
+            if (phy_packet->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
+                if ((res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+                    return res;
+                }
+            }
+        }
     }
 
     return res;
@@ -1173,8 +1196,8 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
         return res;
     }
 
-    // Clear the packet queue in all slots
-    if ((res = clearPacketQueue(&inst->tdma_scheduler)) != STATIC_QUEUE_SUCCESS) {
+    // Clear the packet queue in all slots and notify that the message has been canceled
+    if ((res = clearAndNotifyPacketQueue(inst, &inst->tdma_scheduler)) != STATIC_QUEUE_SUCCESS) {
         return res;
     }
 
@@ -1213,6 +1236,11 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     // Cancel any active timers
     int32_t res = PHY_RADIO_SUCCESS;
     if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
+    // Clear the packet queue in all slots and notify that the message has been canceled
+    if ((res = clearAndNotifyPacketQueue(inst, &inst->tdma_scheduler)) != STATIC_QUEUE_SUCCESS) {
         return res;
     }
 
