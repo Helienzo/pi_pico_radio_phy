@@ -49,6 +49,8 @@
 
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot);
 static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phyRadioPacket_t **data);
+static int32_t queuePeakOnSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t**  pkt);
+static int32_t queueJustPopFromSlot(phyRadioTdma_t* scheduler, uint8_t slot);
 bool repeating_timer_callback(__unused struct repeating_timer *t);
 static int64_t prepare_alarm_callback(alarm_id_t id, void *user_data);
 static int64_t timer_alarm_callback(alarm_id_t id, void *user_data);
@@ -74,6 +76,9 @@ static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
 static int64_t timer_alarm_callback(alarm_id_t id, void *user_data) {
     // Get the current phy radio instance
     phyRadio_t *inst =  (phyRadio_t*)user_data;
+
+    // Get the current time
+    inst->tdma_scheduler.slot_start_time = time_us_64();
 
     // Start the repeating timer, do as little as possible before this point.
 
@@ -268,10 +273,25 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
     return true;
 }
 
+static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes) {
+
+    int32_t time_us = halRadioBitRateToDelayUs(&inst->hal_radio_inst, PHY_RADIO_BIT_RATE, num_bytes);
+
+    // Check the result, should never fail
+    if (time_us < HAL_RADIO_SUCCESS) {
+        return time_us;
+    }
+
+    // Add the guard time
+    time_us += PHY_RADIO_PACKET_GUARD_TIME_US;
+
+    return time_us;
+}
+
 static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot) {
     // TODO here we should check if there is another message in the slot queue, and if it fits in the time left send it
     // if it does not leave it in the queue
-    int32_t res = queuePopFromSlot(tdma_scheduler, tdma_scheduler->current_slot, &tdma_scheduler->active_item);
+    int32_t res = queuePeakOnSlot(tdma_scheduler, slot, &tdma_scheduler->active_item);
     if (res != STATIC_QUEUE_SUCCESS) {
         if (res == STATIC_QUEUE_EMPTY) {
             // Go to default mode
@@ -280,12 +300,42 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
         return PHY_RADIO_TDMA_ERROR;
     }
 
+    // There is a packet in the queue, check how large and determin if we have time to send it
+    if ((res = cBufferAvailableForRead(tdma_scheduler->active_item->pkt_buffer)) <= 0 || res > 255) {
+        // The size of the packet cannot be 0
+        return PHY_RADIO_BUFFER_ERROR;
+    }
+    int32_t packet_time_us = packetTimeEstimate(inst, (uint8_t)res);
+
+    // Compute how long we have been in this slot, and check that we have not overflowed
+    uint64_t time_remaining_in_slot = time_us_64() - tdma_scheduler->slot_start_time;
+    if (time_remaining_in_slot > tdma_scheduler->slot_duration) {
+        return PHY_RADIO_SLOT_OVERFLOW;
+    }
+    time_remaining_in_slot = tdma_scheduler->slot_duration - time_remaining_in_slot;
+
+    if (packet_time_us > time_remaining_in_slot) {
+        // We do not have time for this packet, wait for next slot
+        tdma_scheduler->active_item = NULL;
+        // It is not a bug, retrun success
+        return PHY_RADIO_SUCCESS;
+    }
+
+    // Make sure to remove the new active item from the slot
+    if ((res = queueJustPopFromSlot(tdma_scheduler, slot)) != PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
+    // Lets send this packet!
     LOG_DEBUG("Send during CB\n");
 
     phyRadioPacket_t* active_packet = tdma_scheduler->active_item;
 
     // Assign the current active buffer to the interface
     inst->hal_interface.pkt_buffer = active_packet->pkt_buffer;
+
+    // TODO this is a temporary fix, add some kind of timer here
+    sleep_us(PHY_RADIO_PACKET_GUARD_TIME_US);
 
     tdma_scheduler->in_flight = true;
     res = halRadioSendPackageNB(&inst->hal_radio_inst,
@@ -306,13 +356,25 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
 }
 
 static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t* hal_packet, halRadioErr_t result) {
-    UNUSED(result);
     phyRadio_t * inst = CONTAINER_OF(interface, phyRadio_t, hal_interface);
+    phyRadioErr_t send_result = PHY_RADIO_SUCCESS;
+
+    // Manage the halRadio result
+    switch (result) {
+        case HAL_RADIO_SEND_FAIL:
+            // Manage this specific error
+            send_result = PHY_RADIO_SEND_FAIL;
+            break;
+        default:
+            // Just forwade the error
+            send_result = result;
+            break;
+    }
 
     // Check if we have any active packet in flight, inform higher layer that it has been sent
     int32_t cb_res = PHY_RADIO_CB_SUCCESS;
     if (inst->tdma_scheduler.in_flight && (inst->tdma_scheduler.active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC)) {
-        cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, PHY_RADIO_SUCCESS);
+        cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, send_result);
     }
 
     if (cb_res != PHY_RADIO_CB_SUCCESS) {
