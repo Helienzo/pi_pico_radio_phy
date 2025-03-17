@@ -300,7 +300,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
         return PHY_RADIO_TDMA_ERROR;
     }
 
-    // There is a packet in the queue, check how large and determin if we have time to send it
+    // There is a packet in the queue, check how large it is and determine if we have time to send it
     if ((res = cBufferAvailableForRead(tdma_scheduler->active_item->pkt_buffer)) <= 0 || res > 255) {
         // The size of the packet cannot be 0
         return PHY_RADIO_BUFFER_ERROR;
@@ -314,10 +314,11 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     }
     time_remaining_in_slot = tdma_scheduler->slot_duration - time_remaining_in_slot;
 
+    // TODO should we consider the guard period?
     if (packet_time_us > time_remaining_in_slot) {
         // We do not have time for this packet, wait for next slot
         tdma_scheduler->active_item = NULL;
-        // It is not a bug, retrun success
+        // It is not a bug, just return success
         return PHY_RADIO_SUCCESS;
     }
 
@@ -334,7 +335,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     // Assign the current active buffer to the interface
     inst->hal_interface.pkt_buffer = active_packet->pkt_buffer;
 
-    // TODO this is a temporary fix, add some kind of timer here
+    // TODO this is a temporary fix, add some kind of timer to make it non blocking
     sleep_us(PHY_RADIO_PACKET_GUARD_TIME_US);
 
     tdma_scheduler->in_flight = true;
