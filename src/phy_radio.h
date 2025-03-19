@@ -97,6 +97,11 @@
 #define PHY_RADIO_PACKET_GUARD_TIME_US (20)
 #endif /* PHY_RADIO_PACKET_GUARD_TIME_US */
 
+// There is a blocking sleep call, this regulates the maximum length that is allowed
+#ifndef PHY_RADIO_MAX_BLOCK_DELAY_TIME_US
+#define PHY_RADIO_MAX_BLOCK_DELAY_TIME_US (20)
+#endif /* PHY_RADIO_MAX_BLOCK_DELAY_TIME_US */
+
 #define PHY_RADIO_SUPERFRAME_TIME_US (PHY_RADIO_SLOT_TIME_US * PHY_RADIO_SUPERFRAME_LEN)
 #define PHY_RADIO_SUPERFRAME_TIME_MS (PHY_RADIO_SUPERFRAME_TIME_US/1000)
 
@@ -327,7 +332,7 @@ typedef struct {
     // Timer management
     repeating_timer_t timer;
     bool              timer_active;
-    volatile bool     timer_interrupt;
+    volatile uint8_t  timer_interrupt;
 
     // Phy TDMA Scheduler
     phyRadioTdma_t     tdma_scheduler;

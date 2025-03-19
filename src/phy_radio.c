@@ -47,6 +47,13 @@
 #define UNUSED(x) (void)(x)
 #endif
 
+typedef enum {
+    PHY_RADIO_INT_IDLE = 0,
+    PHY_RADIO_INT_SLOT_TIMER,
+    PHY_RADIO_INT_SCAN_TIMER,
+    PHY_RADIO_INT_SEND_TIMER,
+} phyRadioInterruptEvent_t;
+
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot);
 static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phyRadioPacket_t **data);
 static int32_t queuePeakOnSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t**  pkt);
@@ -55,8 +62,22 @@ bool repeating_timer_callback(__unused struct repeating_timer *t);
 static int64_t prepare_alarm_callback(alarm_id_t id, void *user_data);
 static int64_t timer_alarm_callback(alarm_id_t id, void *user_data);
 static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data);
+static int64_t send_timer_alarm_callback(alarm_id_t id, void *user_data);
 static int32_t cancelAllTimers(phyRadio_t *inst);
 static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t* packet);
+
+static int64_t send_timer_alarm_callback(alarm_id_t id, void *user_data) {
+    // Get the current phy radio instance
+    phyRadio_t *inst =  (phyRadio_t*)user_data;
+
+    // Reset the the alarm ID.
+    inst->tdma_scheduler.sync_alarm_id = 0;
+
+    // Set the interrupt flag, and manage this is the main context
+    inst->timer_interrupt = PHY_RADIO_INT_SEND_TIMER;
+
+    return PHY_RADIO_SUCCESS;
+}
 
 static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
     // Get the current phy radio instance
@@ -67,9 +88,9 @@ static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
     inst->tdma_scheduler.sync_alarm_id = 0;
 
     // Set the interrupt flag, and manage this is the main context
-    inst->timer_interrupt = true;
+    inst->timer_interrupt = PHY_RADIO_INT_SCAN_TIMER;
 
-    return 0;
+    return PHY_RADIO_SUCCESS;
 }
 
 // This alarm is used to synchronize with a central device
@@ -127,8 +148,8 @@ static int64_t timer_alarm_callback(alarm_id_t id, void *user_data) {
     }
 
     // Set the interrupt flag for next processing
-    inst->timer_interrupt = true;
-    return 0;
+    inst->timer_interrupt = PHY_RADIO_INT_SLOT_TIMER;
+    return PHY_RADIO_SUCCESS;
 }
 
 // This alarm tirggers just before the start of a frame to give time for preparing any time critical data
@@ -268,7 +289,7 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
     }
 
     // Set the interrupt flag for next processing
-    inst->timer_interrupt = true;
+    inst->timer_interrupt = PHY_RADIO_INT_SLOT_TIMER;
 
     return true;
 }
@@ -286,6 +307,59 @@ static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes) {
     time_us += PHY_RADIO_PACKET_GUARD_TIME_US;
 
     return time_us;
+}
+
+static int32_t sendOnTimerInterrupt(phyRadio_t *inst) {
+    phyRadioTdma_t* tdma_scheduler = &inst->tdma_scheduler;
+
+    int32_t res = PHY_RADIO_SUCCESS;
+
+    // Make sure to remove the new active item from the slot
+    if ((res = queueJustPopFromSlot(tdma_scheduler, tdma_scheduler->current_slot)) != PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
+    // Lets send this packet!
+    LOG_DEBUG("Send after timer interrupt\n");
+
+    phyRadioPacket_t* active_packet = tdma_scheduler->active_item;
+
+    // Assign the current active buffer to the interface
+    inst->hal_interface.pkt_buffer = active_packet->pkt_buffer;
+
+    // Get the packet size
+    int32_t num_bytes_to_send = 0;
+    if ((num_bytes_to_send = cBufferAvailableForRead(tdma_scheduler->active_item->pkt_buffer)) <= 0 || num_bytes_to_send > 255) {
+        // The size of the packet cannot be 0
+        return PHY_RADIO_BUFFER_ERROR;
+    }
+
+    // Calculate how long time it will take for the receiver to read and decode this packet
+    int32_t spi_time_us = 0;
+    if ((spi_time_us = halRadioSpiDelayEstimateUs(&inst->hal_radio_inst, num_bytes_to_send)) < HAL_RADIO_SUCCESS) {
+        return spi_time_us;
+    }
+
+    // Store the time
+    tdma_scheduler->packet_delay_time_us = spi_time_us;
+
+    // The packet is now in transit
+    tdma_scheduler->in_flight = true;
+    res = halRadioSendPackageNB(&inst->hal_radio_inst,
+                                &inst->hal_interface,
+                                active_packet->addr);
+
+    if (res != HAL_RADIO_SUCCESS) {
+        LOG_DEBUG("Send Failed\n");
+        tdma_scheduler->in_flight        = false;
+        inst->tdma_scheduler.active_item = NULL;
+
+        int32_t cb_res = inst->interface->sent_cb(inst->interface, active_packet, res);
+
+        return cb_res;
+    }
+
+    return PHY_RADIO_SUCCESS;
 }
 
 static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot) {
@@ -314,7 +388,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     }
     time_remaining_in_slot = tdma_scheduler->slot_duration - time_remaining_in_slot;
 
-    // TODO should we consider the guard period?
+    // Check if we have time to send it
     if (packet_time_us > time_remaining_in_slot) {
         // We do not have time for this packet, wait for next slot
         tdma_scheduler->active_item = NULL;
@@ -322,25 +396,35 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
         return PHY_RADIO_SUCCESS;
     }
 
+    // Make sure that the receiver is done with the previous packet we sent by waiting
+    tdma_scheduler->packet_delay_time_us += PHY_RADIO_PACKET_GUARD_TIME_US;
+    if (tdma_scheduler->packet_delay_time_us < PHY_RADIO_MAX_BLOCK_DELAY_TIME_US) {
+        // If this time is short we can just sleep here.
+        sleep_us((uint32_t)tdma_scheduler->packet_delay_time_us);
+    } else {
+        // If the wait time is long we need to schedule this as a non blocking task
+
+        // Double check that the alarm instance is not taken
+        if (inst->tdma_scheduler.sync_alarm_id != 0) {
+            // This would be very weird and should never happen
+            // It would mean that we are trying to sync to a new frame mid frame, makes no sense.
+            return PHY_RADIO_TIMER_ERROR;
+        }
+
+        // Set a timer alarm to trigger the send
+        if ((inst->tdma_scheduler.sync_alarm_id = add_alarm_in_us((uint32_t)tdma_scheduler->packet_delay_time_us, send_timer_alarm_callback, inst, true)) < 0) {
+            LOG_DEBUG("Timer error %i\n", 5);
+            return PHY_RADIO_TIMER_ERROR;
+        }
+
+        // Return we should not do anything more here
+        return HAL_RADIO_CB_DO_NOTHING;
+    }
+
     // Make sure to remove the new active item from the slot
     if ((res = queueJustPopFromSlot(tdma_scheduler, slot)) != PHY_RADIO_SUCCESS) {
         return res;
     }
-
-    gpio_put(HAL_RADIO_PIN_DBG, 1);
-    // Make sure that the receiver is done with the previous packet we sent
-    if (tdma_scheduler->packet_delay_time_us < 10) {
-        // If this time is short we can just sleap here.
-        sleep_us((uint32_t)tdma_scheduler->packet_delay_time_us + PHY_RADIO_PACKET_GUARD_TIME_US);
-    } else {
-        // If the wait time is long we need to schedule this as a non blocking task
-
-        // TODO this is a temporary fix, add some kind of timer to make it non blocking
-        // It looks like the time needed for the other device depends on how long the packet is,
-        // perhaps we can make it dynamic?
-        sleep_us((uint32_t)tdma_scheduler->packet_delay_time_us + PHY_RADIO_PACKET_GUARD_TIME_US);
-    }
-    gpio_put(HAL_RADIO_PIN_DBG, 0);
 
     // Lets send this packet!
     LOG_DEBUG("Send during CB\n");
@@ -992,8 +1076,6 @@ static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, 
     // Store the expected delay time for this packet
     tdma_scheduler->packet_delay_time_us = spi_time_us;
 
-    gpio_put(HAL_RADIO_PIN_DBG, 1);
-    gpio_put(HAL_RADIO_PIN_DBG, 0);
     tdma_scheduler->in_flight = true;
     res = halRadioSendPackageNB(&inst->hal_radio_inst,
                                 &inst->hal_interface,
@@ -1191,26 +1273,40 @@ static int32_t processPeripheral(phyRadio_t *inst) {
 }
 
 int32_t phyRadioProcess(phyRadio_t *inst) {
-    if (inst->timer_interrupt) {
-        // Manage timer tasks
-        inst->timer_interrupt = false;
-        LOG_V_DEBUG("Repeat at %lld\n", time_us_64());
+    switch(inst->timer_interrupt) {
+        case PHY_RADIO_INT_IDLE:
+            break;
+        case PHY_RADIO_INT_SLOT_TIMER:
+        case PHY_RADIO_INT_SCAN_TIMER: {
+            // Manage timer tasks
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            LOG_V_DEBUG("Repeat at %lld\n", time_us_64());
 
-        switch(inst->sync_state.mode) {
-            case PHY_RADIO_MODE_CENTRAL:
-                return processCentral(inst);
-            case PHY_RADIO_MODE_PERIPHERAL:
-                return processPeripheral(inst);
-            case PHY_RADIO_MODE_SCAN:
-                return processScan(inst);
-            default:
-                if (inst->sync_state.mode < PHY_RADIO_MODE_IDLE) {
-                    // Cancel any active timers, ignore the result
-                    cancelAllTimers(inst);
-                    return inst->sync_state.mode;
-                }
-                break;
-        }
+            switch(inst->sync_state.mode) {
+                case PHY_RADIO_MODE_CENTRAL:
+                    return processCentral(inst);
+                case PHY_RADIO_MODE_PERIPHERAL:
+                    return processPeripheral(inst);
+                case PHY_RADIO_MODE_SCAN:
+                    return processScan(inst);
+                default:
+                    if (inst->sync_state.mode < PHY_RADIO_MODE_IDLE) {
+                        // Cancel any active timers, ignore the result
+                        cancelAllTimers(inst);
+                        return inst->sync_state.mode;
+                    }
+                    break;
+            }
+        } break;
+        case PHY_RADIO_INT_SEND_TIMER: {
+            // Manage send task
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+
+            int32_t res = sendOnTimerInterrupt(inst);
+            return res;
+        } break;
+        default:
+            break;
     }
 
     int32_t res = halRadioProcess(&inst->hal_radio_inst);
@@ -1263,8 +1359,6 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
 
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
     // Init the TX RX GPIO
-    gpio_init(HAL_RADIO_PIN_DBG);
-    gpio_set_dir(HAL_RADIO_PIN_DBG, GPIO_OUT);
     gpio_init(HAL_RADIO_PIN_TX_RX);
     gpio_set_dir(HAL_RADIO_PIN_TX_RX, GPIO_OUT);
 #endif
