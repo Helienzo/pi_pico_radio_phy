@@ -94,7 +94,7 @@
 
 // Guard time between two TX packets in the same slot
 #ifndef PHY_RADIO_PACKET_GUARD_TIME_US
-#define PHY_RADIO_PACKET_GUARD_TIME_US (400)
+#define PHY_RADIO_PACKET_GUARD_TIME_US (20)
 #endif /* PHY_RADIO_PACKET_GUARD_TIME_US */
 
 #define PHY_RADIO_SUPERFRAME_TIME_US (PHY_RADIO_SLOT_TIME_US * PHY_RADIO_SUPERFRAME_LEN)
@@ -107,6 +107,7 @@
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
 #ifndef HAL_RADIO_PIN_TX_RX
 #define HAL_RADIO_PIN_TX_RX (22)
+#define HAL_RADIO_PIN_DBG   (26)
 #endif /* HAL_RADIO_PIN_TX_RX */
 #endif /* HAL_RADIO_SLOT_GPIO_DEBUG */
 
@@ -271,6 +272,7 @@ typedef struct {
     alarm_id_t         sync_alarm_id;
     uint64_t           pkt_sent_time;
     uint32_t           scan_timeout_ms;
+    uint16_t           packet_delay_time_us; // The time it will take for the receiver to read and decode this packet
 
     // Superframe management
     uint32_t superslot_counter; // Keeping track of number of slots in a superframe

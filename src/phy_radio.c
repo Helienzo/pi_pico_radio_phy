@@ -289,8 +289,6 @@ static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes) {
 }
 
 static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot) {
-    // TODO here we should check if there is another message in the slot queue, and if it fits in the time left send it
-    // if it does not leave it in the queue
     int32_t res = queuePeakOnSlot(tdma_scheduler, slot, &tdma_scheduler->active_item);
     if (res != STATIC_QUEUE_SUCCESS) {
         if (res == STATIC_QUEUE_EMPTY) {
@@ -301,11 +299,13 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     }
 
     // There is a packet in the queue, check how large it is and determine if we have time to send it
-    if ((res = cBufferAvailableForRead(tdma_scheduler->active_item->pkt_buffer)) <= 0 || res > 255) {
+    int32_t num_bytes_to_send = 0;
+    if ((num_bytes_to_send = cBufferAvailableForRead(tdma_scheduler->active_item->pkt_buffer)) <= 0 || num_bytes_to_send > 255) {
         // The size of the packet cannot be 0
         return PHY_RADIO_BUFFER_ERROR;
     }
-    int32_t packet_time_us = packetTimeEstimate(inst, (uint8_t)res);
+
+    int32_t packet_time_us = packetTimeEstimate(inst, (uint8_t)num_bytes_to_send);
 
     // Compute how long we have been in this slot, and check that we have not overflowed
     uint64_t time_remaining_in_slot = time_us_64() - tdma_scheduler->slot_start_time;
@@ -327,6 +327,21 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
         return res;
     }
 
+    gpio_put(HAL_RADIO_PIN_DBG, 1);
+    // Make sure that the receiver is done with the previous packet we sent
+    if (tdma_scheduler->packet_delay_time_us < 10) {
+        // If this time is short we can just sleap here.
+        sleep_us((uint32_t)tdma_scheduler->packet_delay_time_us + PHY_RADIO_PACKET_GUARD_TIME_US);
+    } else {
+        // If the wait time is long we need to schedule this as a non blocking task
+
+        // TODO this is a temporary fix, add some kind of timer to make it non blocking
+        // It looks like the time needed for the other device depends on how long the packet is,
+        // perhaps we can make it dynamic?
+        sleep_us((uint32_t)tdma_scheduler->packet_delay_time_us + PHY_RADIO_PACKET_GUARD_TIME_US);
+    }
+    gpio_put(HAL_RADIO_PIN_DBG, 0);
+
     // Lets send this packet!
     LOG_DEBUG("Send during CB\n");
 
@@ -335,9 +350,16 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     // Assign the current active buffer to the interface
     inst->hal_interface.pkt_buffer = active_packet->pkt_buffer;
 
-    // TODO this is a temporary fix, add some kind of timer to make it non blocking
-    sleep_us(PHY_RADIO_PACKET_GUARD_TIME_US);
+    // Calculate how long time it will take for the receiver to read and decode this packet
+    int32_t spi_time_us = 0;
+    if ((spi_time_us = halRadioSpiDelayEstimateUs(&inst->hal_radio_inst, num_bytes_to_send)) < HAL_RADIO_SUCCESS) {
+        return spi_time_us;
+    }
 
+    // Store the time
+    tdma_scheduler->packet_delay_time_us = spi_time_us;
+
+    // The packet is now in transit
     tdma_scheduler->in_flight = true;
     res = halRadioSendPackageNB(&inst->hal_radio_inst,
                                 &inst->hal_interface,
@@ -552,6 +574,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
     if (bytes_in_packets < PHY_RADIO_OVERHEAD_SIZE) {
         return HAL_RADIO_CB_DO_NOTHING;
     }
+
 
     // These are safe calls since we have checked the validity and size of the buffer
     uint8_t sender_address = cBufferReadByte(interface->pkt_buffer);
@@ -956,6 +979,21 @@ static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, 
 
     inst->hal_interface.pkt_buffer = active_packet->pkt_buffer;
 
+    int32_t num_bytes_to_send = 0;
+    if ((num_bytes_to_send = cBufferAvailableForRead(active_packet->pkt_buffer)) <= C_BUFFER_SUCCESS || num_bytes_to_send > 255) {
+        return PHY_RADIO_BUFFER_ERROR;
+    }
+
+    int32_t spi_time_us = 0;
+    if ((spi_time_us = halRadioSpiDelayEstimateUs(&inst->hal_radio_inst, num_bytes_to_send)) < HAL_RADIO_SUCCESS) {
+        return spi_time_us;
+    }
+
+    // Store the expected delay time for this packet
+    tdma_scheduler->packet_delay_time_us = spi_time_us;
+
+    gpio_put(HAL_RADIO_PIN_DBG, 1);
+    gpio_put(HAL_RADIO_PIN_DBG, 0);
     tdma_scheduler->in_flight = true;
     res = halRadioSendPackageNB(&inst->hal_radio_inst,
                                 &inst->hal_interface,
@@ -1225,6 +1263,8 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
 
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
     // Init the TX RX GPIO
+    gpio_init(HAL_RADIO_PIN_DBG);
+    gpio_set_dir(HAL_RADIO_PIN_DBG, GPIO_OUT);
     gpio_init(HAL_RADIO_PIN_TX_RX);
     gpio_set_dir(HAL_RADIO_PIN_TX_RX, GPIO_OUT);
 #endif
