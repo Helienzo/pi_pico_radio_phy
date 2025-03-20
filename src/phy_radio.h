@@ -112,7 +112,6 @@
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
 #ifndef HAL_RADIO_PIN_TX_RX
 #define HAL_RADIO_PIN_TX_RX (22)
-#define HAL_RADIO_PIN_DBG   (26)
 #endif /* HAL_RADIO_PIN_TX_RX */
 #endif /* HAL_RADIO_SLOT_GPIO_DEBUG */
 
