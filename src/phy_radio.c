@@ -1349,7 +1349,7 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
         return res;
     }
 
-    // Lest make sure that the longest packets supported fit in our slot coniguration
+    // Lets make sure that the longest packets supported fit in our slot configuration
     int32_t packet_time_us = packetTimeEstimate(inst, PHY_RADIO_MAX_PACKET_SIZE);
     if (packet_time_us < PHY_RADIO_SUCCESS) {
         // An unkonwn error occured
