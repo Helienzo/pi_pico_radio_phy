@@ -33,4 +33,4 @@ During an RX slot the radio listens continously for incomming packets.
 ## Known limitations
  The TDD mode currently only supports two devices in a point to point communication mode. I have plans to implement multidevice support sometimes in the future.
 
- The send function in TDD mode currently does not warn if the total number of packets queued in a single slot exceeds the maximum available tranfer time. I might add a check for that in a later fix.
+ The send function in TDD mode currently does not warn if the total number of packets queued in a single slot exceeds the maximum available transfer time. I might add a check for that in a later fix.
