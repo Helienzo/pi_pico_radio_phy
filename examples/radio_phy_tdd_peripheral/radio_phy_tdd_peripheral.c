@@ -200,7 +200,7 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            break;
         case PHY_RADIO_SCAN_TIMEOUT:
            // Scan timeout, no device found
-           int32_t res = phyRadioSetScanMode(inst, SCAN_TIMEOUT_MS);
+           int32_t res = phyRadioSetScanMode(&inst->phy_radio_inst, SCAN_TIMEOUT_MS);
            if (res != PHY_RADIO_SUCCESS) {
                return res;
            }
