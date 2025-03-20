@@ -309,8 +309,7 @@ static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes) {
     return time_us;
 }
 
-static int32_t sendOnTimerInterrupt(phyRadio_t *inst) {
-    phyRadioTdma_t* tdma_scheduler = &inst->tdma_scheduler;
+static int32_t sendOnTimerInterrupt(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler) {
 
     int32_t res = PHY_RADIO_SUCCESS;
 
@@ -382,14 +381,16 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     int32_t packet_time_us = packetTimeEstimate(inst, (uint8_t)num_bytes_to_send);
 
     // Compute how long we have been in this slot, and check that we have not overflowed
-    uint64_t time_remaining_in_slot = time_us_64() - tdma_scheduler->slot_start_time;
-    if (time_remaining_in_slot > tdma_scheduler->slot_duration) {
+    uint64_t time_in_slot = time_us_64() - tdma_scheduler->slot_start_time;
+    if (time_in_slot > tdma_scheduler->slot_duration - PHY_RADIO_GUARD_TIME_US) {
         return PHY_RADIO_SLOT_OVERFLOW;
     }
-    time_remaining_in_slot = tdma_scheduler->slot_duration - time_remaining_in_slot;
+
+    // Calculate how much time we have remaining in the slot excluding the guard period
+    uint64_t time_remaining_in_slot = tdma_scheduler->slot_duration - time_in_slot - PHY_RADIO_GUARD_TIME_US;
 
     // Check if we have time to send it
-    if (packet_time_us > time_remaining_in_slot) {
+    if ((packet_time_us + tdma_scheduler->packet_delay_time_us + PHY_RADIO_PACKET_GUARD_TIME_US) > time_remaining_in_slot) {
         // We do not have time for this packet, wait for next slot
         tdma_scheduler->active_item = NULL;
         // It is not a bug, just return success
@@ -398,6 +399,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
 
     // Make sure that the receiver is done with the previous packet we sent by waiting
     tdma_scheduler->packet_delay_time_us += PHY_RADIO_PACKET_GUARD_TIME_US;
+
     if (tdma_scheduler->packet_delay_time_us < PHY_RADIO_MAX_BLOCK_DELAY_TIME_US) {
         // If this time is short we can just sleep here.
         sleep_us((uint32_t)tdma_scheduler->packet_delay_time_us);
@@ -1302,7 +1304,8 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
             // Manage send task
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
 
-            int32_t res = sendOnTimerInterrupt(inst);
+            int32_t res = sendOnTimerInterrupt(inst, &inst->tdma_scheduler);
+
             return res;
         } break;
         default:
@@ -1344,6 +1347,17 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
 
     if (res != HAL_RADIO_SUCCESS) {
         return res;
+    }
+
+    // Lest make sure that the longest packets supported fit in our slot coniguration
+    int32_t packet_time_us = packetTimeEstimate(inst, PHY_RADIO_MAX_PACKET_SIZE);
+    if (packet_time_us < PHY_RADIO_SUCCESS) {
+        // An unkonwn error occured
+        return packet_time_us;
+    }
+
+    if (packet_time_us > PHY_RADIO_SLOT_TIME_US) {
+        return PHY_RADIO_INVALID_SLOT;
     }
 
     inst->hal_interface.package_cb  = halRadioPackageCb;
