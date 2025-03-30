@@ -52,6 +52,9 @@ typedef enum {
     PHY_RADIO_INT_SLOT_TIMER,
     PHY_RADIO_INT_SCAN_TIMER,
     PHY_RADIO_INT_SEND_TIMER,
+    PHY_RADIO_INT_REPEATING_TIMER,
+    PHY_RADIO_INT_PREPARE_TIMER,
+    PHY_RADIO_INT_SYNC_TIMER,
 } phyRadioInterruptEvent_t;
 
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot);
@@ -97,20 +100,27 @@ static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
 static int64_t timer_alarm_callback(alarm_id_t id, void *user_data) {
     // Get the current phy radio instance
     phyRadio_t *inst =  (phyRadio_t*)user_data;
+    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
 
     // Get the current time
     inst->tdma_scheduler.slot_start_time = time_us_64();
 
-    // Start the repeating timer, do as little as possible before this point.
+    tdma_scheduler->sync_alarm_id = 0; // Reset the alarm
 
+    // Start the repeating timer, do as little as possible before this point.
     if (!add_repeating_timer_us(inst->tdma_scheduler.slot_duration, repeating_timer_callback, inst, &inst->timer)) {
         inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
         LOG_DEBUG("Timer error %i\n", 1);
     }
-    inst->timer_active = true;
 
+    inst->timer_active = true;
+    inst->timer_interrupt = PHY_RADIO_INT_SYNC_TIMER;
+
+    return PHY_RADIO_SUCCESS;
+}
+
+static int32_t manageSyncTimerInterrupt(phyRadio_t *inst) {
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
-    tdma_scheduler->sync_alarm_id = 0; // Reset the alarm
 
     // Check what slot we are currently in
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
@@ -158,6 +168,14 @@ static int64_t prepare_alarm_callback(alarm_id_t id, void *user_data) {
     phyRadio_t *inst =  (phyRadio_t*)user_data;
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
     tdma_scheduler->prepare_alarm_id = 0;
+
+    inst->timer_interrupt = PHY_RADIO_INT_PREPARE_TIMER;
+
+    return 0;
+}
+
+static int32_t managePrepareTimerInterrupt(phyRadio_t *inst) {
+    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
 
     // Get the next slot
     tdma_scheduler->current_slot = MODULO_INC(tdma_scheduler->current_slot, PHY_RADIO_NUM_SLOTS);
@@ -251,6 +269,14 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
     // Get the current time
     tdma_scheduler->slot_start_time = time_us_64();
 
+    // Set interrupt flag
+    inst->timer_interrupt = PHY_RADIO_INT_REPEATING_TIMER;
+
+    return true;
+} 
+
+static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst) {
+    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
     // Check what slot we are currently in
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
         case PHY_RADIO_SLOT_TX: {
@@ -291,7 +317,7 @@ bool repeating_timer_callback(__unused struct repeating_timer *t) {
     // Set the interrupt flag for next processing
     inst->timer_interrupt = PHY_RADIO_INT_SLOT_TIMER;
 
-    return true;
+    return PHY_RADIO_SUCCESS;
 }
 
 static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes) {
@@ -1306,6 +1332,21 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
 
             int32_t res = sendOnTimerInterrupt(inst, &inst->tdma_scheduler);
 
+            return res;
+        } break;
+        case PHY_RADIO_INT_REPEATING_TIMER: {
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            int32_t res = manageRepeatingTimerInterrupt(inst);
+            return res;
+        } break;
+        case PHY_RADIO_INT_PREPARE_TIMER: {
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            int32_t res = managePrepareTimerInterrupt(inst);
+            return res;
+        } break;
+        case PHY_RADIO_INT_SYNC_TIMER: {
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            int32_t res = manageSyncTimerInterrupt(inst);
             return res;
         } break;
         default:
