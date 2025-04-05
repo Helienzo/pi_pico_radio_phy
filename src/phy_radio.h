@@ -133,7 +133,8 @@
 #endif /* PHY_RADIO_BROADCAST_ADDR */
 
 typedef enum {
-    PHY_RADIO_SUCCESS,
+    PHY_RADIO_INTERRUPT_IN_QUEUE = 1,
+    PHY_RADIO_SUCCESS            = 0,
     PHY_RADIO_NULL_ERROR    = -20001,
     PHY_RADIO_GEN_ERROR     = -20002,
     PHY_RADIO_DRIVER_ERROR  = -20003,
@@ -272,8 +273,9 @@ typedef struct {
     uint8_t            current_slot;
     phyRadioPacket_t   *active_item;
     bool               in_flight;
-    alarm_id_t         prepare_alarm_id;
-    alarm_id_t         sync_alarm_id;
+    alarm_id_t         prepare_alarm_id; // Timer alarm used to start the guard period
+    alarm_id_t         sync_alarm_id;    // Timer alarm used for synchronization with Central
+    alarm_id_t         task_alarm_id;    // Timer alarm used for time dependent tasks
     uint64_t           pkt_sent_time;
     uint32_t           scan_timeout_ms;
     uint16_t           packet_delay_time_us; // The time it will take for the receiver to read and decode this packet
@@ -351,6 +353,13 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
  * Returns: phyRadioErr_t
  */
 int32_t phyRadioProcess(phyRadio_t *inst);
+
+/**
+ * Check if the phy radio needs to be processed
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioEventInQueue(phyRadio_t *inst);
 
 /**
  * Scan for other phyRadio device

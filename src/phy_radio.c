@@ -81,7 +81,7 @@ static int64_t send_timer_alarm_callback(alarm_id_t id, void *user_data) {
     phyRadio_t *inst =  (phyRadio_t*)user_data;
 
     // Reset the the alarm ID.
-    inst->tdma_scheduler.sync_alarm_id = 0;
+    inst->tdma_scheduler.task_alarm_id = 0;
 
     // Set the interrupt flag, and manage this is the main context
     inst->timer_interrupt = PHY_RADIO_INT_SEND_TIMER;
@@ -95,7 +95,7 @@ static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
 
     // No device was found during scan
     // Reset the the alarm ID.
-    inst->tdma_scheduler.sync_alarm_id = 0;
+    inst->tdma_scheduler.task_alarm_id = 0;
 
     // Set the interrupt flag, and manage this is the main context
     inst->timer_interrupt = PHY_RADIO_INT_SCAN_TIMER;
@@ -456,7 +456,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
         // If the wait time is long we need to schedule this as a non blocking task
 
         // Double check that the alarm instance is not taken
-        if (inst->tdma_scheduler.sync_alarm_id != 0) {
+        if (inst->tdma_scheduler.task_alarm_id != 0) {
             // This would be very weird and should never happen
             // It would mean that we are trying to sync to a new frame mid frame, makes no sense.
             LOG_TIMER_ERROR("Timer error %i\n", 2);
@@ -464,7 +464,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
         }
 
         // Set a timer alarm to trigger the send
-        if ((inst->tdma_scheduler.sync_alarm_id = add_alarm_in_us((uint32_t)tdma_scheduler->packet_delay_time_us, send_timer_alarm_callback, inst, true)) < 0) {
+        if ((inst->tdma_scheduler.task_alarm_id = add_alarm_in_us((uint32_t)tdma_scheduler->packet_delay_time_us, send_timer_alarm_callback, inst, true)) < 0) {
             LOG_TIMER_ERROR("Timer error %i\n", 3);
             return PHY_RADIO_TIMER_ERROR;
         }
@@ -1059,6 +1059,7 @@ static int32_t initTdmaScheduler(phyRadioTdma_t *inst) {
     // Reset the alarm ID's
     inst->prepare_alarm_id = 0;
     inst->sync_alarm_id = 0;
+    inst->task_alarm_id = 0;
 
     // Reset all time keepers
     inst->central_sync_msg_time = 0;
@@ -1239,6 +1240,14 @@ static int32_t cancelAllTimers(phyRadio_t *inst) {
         tdma_scheduler->sync_alarm_id = 0;
     }
 
+    if (tdma_scheduler->task_alarm_id != 0) {
+        if (!cancel_alarm(tdma_scheduler->task_alarm_id)) {
+            LOG_TIMER_ERROR("Timer error %i\n", 12);
+            return PHY_RADIO_TIMER_ERROR;
+        }
+        tdma_scheduler->task_alarm_id = 0;
+    }
+
     return PHY_RADIO_SUCCESS;
 }
 
@@ -1321,6 +1330,18 @@ static int32_t processPeripheral(phyRadio_t *inst) {
         default:
             return PHY_RADIO_SUCCESS;
     }
+    return PHY_RADIO_SUCCESS;
+}
+
+int32_t phyRadioEventInQueue(phyRadio_t *inst) {
+    if (halRadioEventInQueue(&inst->hal_radio_inst) > 0) {
+        return PHY_RADIO_INTERRUPT_IN_QUEUE;
+    }
+
+    if (inst->timer_interrupt > 0) {
+        return PHY_RADIO_INTERRUPT_IN_QUEUE;
+    }
+
     return PHY_RADIO_SUCCESS;
 }
 
@@ -1486,8 +1507,13 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
     }
 
     if (timeout_ms > 0) {
-        if ((inst->tdma_scheduler.sync_alarm_id = add_alarm_in_ms(timeout_ms, scan_timer_alarm_callback, inst, true)) < 0) {
+        if (inst->tdma_scheduler.task_alarm_id != 0) {
             LOG_TIMER_ERROR("Timer error %i\n", 13);
+            return PHY_RADIO_TIMER_ERROR;
+        }
+
+        if ((inst->tdma_scheduler.task_alarm_id = add_alarm_in_ms(timeout_ms, scan_timer_alarm_callback, inst, true)) < 0) {
+            LOG_TIMER_ERROR("Timer error %i\n", 14);
             return PHY_RADIO_TIMER_ERROR;
         }
     }
@@ -1529,7 +1555,7 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     // Start broadcasting a sync message to enable other units to adjust their clocks
 
     if (!add_repeating_timer_us(PHY_RADIO_SLOT_TIME_US, repeating_timer_callback, inst, &inst->timer)) {
-        LOG_TIMER_ERROR("Timer error %i\n", 14);
+        LOG_TIMER_ERROR("Timer error %i\n", 15);
         return PHY_RADIO_TIMER_ERROR;
     }
     inst->timer_active = true;
