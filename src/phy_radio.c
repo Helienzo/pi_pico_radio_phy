@@ -359,6 +359,8 @@ static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes) {
 }
 
 static int32_t sendOnTimerInterrupt(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler) {
+    // Reset the timer ID
+    inst->tdma_scheduler.task_alarm_id = 0;
 
     int32_t res = PHY_RADIO_SUCCESS;
 
@@ -458,12 +460,13 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
         // Double check that the alarm instance is not taken
         if (inst->tdma_scheduler.task_alarm_id != 0) {
             // This would be very weird and should never happen
-            // It would mean that we are trying to sync to a new frame mid frame, makes no sense.
-            LOG_TIMER_ERROR("Timer error %i\n", 2);
+            // It would mean that we have an active alarm but still got a packet sent
+            // It could mean that the main loop never had time to manage our alarm.
+            LOG_TIMER_ERROR("Timer error %i %u\n", 2, inst->tdma_scheduler.task_alarm_id);
             return PHY_RADIO_TIMER_ERROR;
         }
 
-        // Set a timer alarm to trigger the send
+        // Set a timer alarm to trigger the send, if the time is short here is seems like the timer can trigger during this call.
         if ((inst->tdma_scheduler.task_alarm_id = add_alarm_in_us((uint32_t)tdma_scheduler->packet_delay_time_us, send_timer_alarm_callback, inst, true)) < 0) {
             LOG_TIMER_ERROR("Timer error %i\n", 3);
             return PHY_RADIO_TIMER_ERROR;
