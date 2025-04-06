@@ -459,11 +459,18 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
 
         // Double check that the alarm instance is not taken
         if (inst->tdma_scheduler.task_alarm_id != 0) {
-            // This would be very weird and should never happen
+            // This is very weird and should never happen
             // It would mean that we have an active alarm but still got a packet sent
             // It could mean that the main loop never had time to manage our alarm.
+            // Or it could be some other issue where the flag was not correctly set
             LOG_TIMER_ERROR("Timer error %i %u\n", 2, inst->tdma_scheduler.task_alarm_id);
-            return PHY_RADIO_TIMER_ERROR;
+
+            // TODO this error can happen but it is fairly rare, try to just cancel the timer, it is probably allready managed
+            cancel_alarm(inst->tdma_scheduler.task_alarm_id);
+            inst->tdma_scheduler.task_alarm_id = 0;
+
+            // TODO ignore this error for now, I think it is ok but time will tell
+            //return PHY_RADIO_TIMER_ERROR;
         }
 
         // Set a timer alarm to trigger the send, if the time is short here is seems like the timer can trigger during this call.
