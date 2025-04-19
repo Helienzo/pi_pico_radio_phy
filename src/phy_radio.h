@@ -3,36 +3,29 @@
  * @author:     Lucas Wennerholm <lucas.wennerholm@gmail.com>
  * @brief:      Header file for Phy radio layer, supporting TDMA and ALOHA
  *
- * @license: MIT License
+ * @license: Apache 2.0
  *
- * Copyright (c) 2024 Lucas Wennerholm
+ * Copyright 2025 Lucas Wennerholm
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
-*/
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #ifndef PHY_RADIO_H
 #define PHY_RADIO_H
-#include "pico/stdlib.h"
 #include "hal_radio.h"
 #include "static_queue.h"
-#include "pico/time.h"
 #include "c_buffer.h"
+#include "phy_radio_timer.h"
 
 #ifndef CONTAINER_OF
 #define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
@@ -273,9 +266,6 @@ typedef struct {
     uint8_t            current_slot;
     phyRadioPacket_t   *active_item;
     bool               in_flight;
-    alarm_id_t         prepare_alarm_id; // Timer alarm used to start the guard period
-    alarm_id_t         sync_alarm_id;    // Timer alarm used for synchronization with Central
-    alarm_id_t         task_alarm_id;    // Timer alarm used for time dependent tasks
     uint64_t           pkt_sent_time;
     uint32_t           scan_timeout_ms;
     uint16_t           packet_delay_time_us; // The time it will take for the receiver to read and decode this packet
@@ -331,9 +321,8 @@ typedef struct {
     halRadioInterface_t hal_interface;
 
     // Timer management
-    repeating_timer_t timer;
-    bool              timer_active;
-    volatile uint8_t  timer_interrupt;
+    phyRadioTimer_t  radio_timer;
+    volatile uint8_t timer_interrupt;
 
     // Phy TDMA Scheduler
     phyRadioTdma_t     tdma_scheduler;

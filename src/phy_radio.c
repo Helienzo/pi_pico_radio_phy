@@ -3,28 +3,22 @@
  * @author:     Lucas Wennerholm <lucas.wennerholm@gmail.com>
  * @brief:      Implementation Phy radio layer, supporting TDMA and ALOHA
  *
- * @license: MIT License
+ * @license: Apache 2.0
  *
- * Copyright (c) 2024 Lucas Wennerholm
+ * Copyright 2025 Lucas Wennerholm
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
-*/
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include "phy_radio.h"
 #include "string.h"
@@ -65,23 +59,21 @@ static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, 
 static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phyRadioPacket_t **data);
 static int32_t queuePeakOnSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t**  pkt);
 static int32_t queueJustPopFromSlot(phyRadioTdma_t* scheduler, uint8_t slot);
-bool repeating_timer_callback(__unused struct repeating_timer *t);
-static int64_t prepare_alarm_callback(alarm_id_t id, void *user_data);
-static int64_t timer_alarm_callback(alarm_id_t id, void *user_data);
-static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data);
-static int64_t send_timer_alarm_callback(alarm_id_t id, void *user_data);
-static int32_t cancelAllTimers(phyRadio_t *inst);
+static int32_t repeating_timer_callback(phyRadioTimer_t *interface);
+static int32_t prepare_alarm_callback(phyRadioTimer_t *interface);
+static int32_t sync_timer_alarm_callback(phyRadioTimer_t *interface);
+static int32_t scan_timer_alarm_callback(phyRadioTimer_t *interface);
+static int32_t send_timer_alarm_callback(phyRadioTimer_t *interface);
+static inline int32_t cancelAllTimers(phyRadio_t *inst);
 static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t* packet);
 static int32_t manageSyncTimerInterrupt(phyRadio_t *inst);
 static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst);
 static int32_t managePrepareTimerInterrupt(phyRadio_t *inst);
 
-static int64_t send_timer_alarm_callback(alarm_id_t id, void *user_data) {
-    // Get the current phy radio instance
-    phyRadio_t *inst =  (phyRadio_t*)user_data;
 
-    // Reset the the alarm ID.
-    inst->tdma_scheduler.task_alarm_id = 0;
+static int32_t send_timer_alarm_callback(phyRadioTimer_t *interface) {
+    // Get the current phy radio instance
+    phyRadio_t *inst = CONTAINER_OF(interface, phyRadio_t, radio_timer);
 
     // Set the interrupt flag, and manage this is the main context
     inst->timer_interrupt = PHY_RADIO_INT_SEND_TIMER;
@@ -89,13 +81,9 @@ static int64_t send_timer_alarm_callback(alarm_id_t id, void *user_data) {
     return PHY_RADIO_SUCCESS;
 }
 
-static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
+static int32_t scan_timer_alarm_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
-    phyRadio_t *inst =  (phyRadio_t*)user_data;
-
-    // No device was found during scan
-    // Reset the the alarm ID.
-    inst->tdma_scheduler.task_alarm_id = 0;
+    phyRadio_t *inst = CONTAINER_OF(interface, phyRadio_t, radio_timer);
 
     // Set the interrupt flag, and manage this is the main context
     inst->timer_interrupt = PHY_RADIO_INT_SCAN_TIMER;
@@ -104,23 +92,19 @@ static int64_t scan_timer_alarm_callback(alarm_id_t id, void *user_data) {
 }
 
 // This alarm is used to synchronize with a central device
-static int64_t timer_alarm_callback(alarm_id_t id, void *user_data) {
+static int32_t sync_timer_alarm_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
-    phyRadio_t *inst =  (phyRadio_t*)user_data;
+    phyRadio_t *inst = CONTAINER_OF(interface, phyRadio_t, radio_timer);
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
 
     // Get the current time
     inst->tdma_scheduler.slot_start_time = time_us_64();
 
-    tdma_scheduler->sync_alarm_id = 0; // Reset the alarm
-
     // Start the repeating timer, do as little as possible before this point.
-    if (!add_repeating_timer_us(inst->tdma_scheduler.slot_duration, repeating_timer_callback, inst, &inst->timer)) {
+    if (PHY_RADIO_TIMER_SUCCESS != phyRadioTimerStartRepeatingTimer(&inst->radio_timer, repeating_timer_callback, inst->tdma_scheduler.slot_duration)) {
         inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
         LOG_DEBUG("Timer error %i\n", 1);
     }
-
-    inst->timer_active = true;
 
     if (halRadioCheckBusy(&inst->hal_radio_inst) == HAL_RADIO_BUSY) {
         inst->timer_interrupt = PHY_RADIO_INT_SYNC_TIMER;
@@ -163,10 +147,10 @@ static int32_t manageSyncTimerInterrupt(phyRadio_t *inst) {
     }
 
     // Schedule the next prepare alarm
-    if ((tdma_scheduler->prepare_alarm_id = add_alarm_in_us(PHY_RADIO_TX_PREPARE_US, prepare_alarm_callback, inst, true)) < 0) {
+    int32_t res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, PHY_RADIO_TX_PREPARE_US);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
         inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
-        LOG_DEBUG("Timer error %i\n", 2);
-        tdma_scheduler->prepare_alarm_id = 0;
+        LOG_DEBUG("Timer error %i\n", 3);
     }
 
     // Set the interrupt flag for next processing
@@ -175,12 +159,10 @@ static int32_t manageSyncTimerInterrupt(phyRadio_t *inst) {
 }
 
 // This alarm tirggers just before the start of a frame to give time for preparing any time critical data
-static int64_t prepare_alarm_callback(alarm_id_t id, void *user_data) {
+static int32_t prepare_alarm_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
-    phyRadio_t *inst =  (phyRadio_t*)user_data;
+    phyRadio_t *inst = CONTAINER_OF(interface, phyRadio_t, radio_timer);
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
-    tdma_scheduler->prepare_alarm_id = 0;
-
 
     if (halRadioCheckBusy(&inst->hal_radio_inst) == HAL_RADIO_BUSY) {
         inst->timer_interrupt = PHY_RADIO_INT_PREPARE_TIMER;
@@ -280,9 +262,9 @@ static int32_t managePrepareTimerInterrupt(phyRadio_t *inst) {
     return PHY_RADIO_SUCCESS;
 }
 
-bool repeating_timer_callback(__unused struct repeating_timer *t) {
+int32_t repeating_timer_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
-    phyRadio_t *inst =  (phyRadio_t*)t->user_data;
+    phyRadio_t *inst = CONTAINER_OF(interface, phyRadio_t, radio_timer);
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
 
     // Get the current time
@@ -331,10 +313,10 @@ static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst) {
     }
 
     // Schedule the next prepare alarm
-    if ((tdma_scheduler->prepare_alarm_id = add_alarm_in_us(PHY_RADIO_TX_PREPARE_US, prepare_alarm_callback, inst, true)) < 0) {
+    int32_t res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, PHY_RADIO_TX_PREPARE_US);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
         inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
         LOG_DEBUG("Timer error %i\n", 3);
-        tdma_scheduler->prepare_alarm_id = 0;
     }
 
     // Set the interrupt flag for next processing
@@ -359,9 +341,6 @@ static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes) {
 }
 
 static int32_t sendOnTimerInterrupt(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler) {
-    // Reset the timer ID
-    inst->tdma_scheduler.task_alarm_id = 0;
-
     int32_t res = PHY_RADIO_SUCCESS;
 
     // Make sure to remove the new active item from the slot
@@ -457,24 +436,22 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     } else {
         // If the wait time is long we need to schedule this as a non blocking task
 
-        // Double check that the alarm instance is not taken
-        if (inst->tdma_scheduler.task_alarm_id != 0) {
-            // This is very weird and should never happen
+           
+        res = phyRadioTimerCancelTaskTimer(&inst->radio_timer);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
+            // Perhaps we need Double check that the alarm instance is not taken, we should not have to cancel the timer here..
+            // But sometimes the alarm id is not 0 here, This is very weird and should never happen
             // It would mean that we have an active alarm but still got a packet sent
             // It could mean that the main loop never had time to manage our alarm.
             // Or it could be some other issue where the flag was not correctly set
-            LOG_TIMER_ERROR("Timer error %i %u\n", 2, inst->tdma_scheduler.task_alarm_id);
-
             // TODO this error can happen but it is fairly rare, try to just cancel the timer, it is probably allready managed
-            cancel_alarm(inst->tdma_scheduler.task_alarm_id);
-            inst->tdma_scheduler.task_alarm_id = 0;
-
-            // TODO ignore this error for now, I think it is ok but time will tell
-            //return PHY_RADIO_TIMER_ERROR;
+            LOG_TIMER_ERROR("Timer error %i\n", 3);
+            return res;
         }
 
         // Set a timer alarm to trigger the send, if the time is short here is seems like the timer can trigger during this call.
-        if ((inst->tdma_scheduler.task_alarm_id = add_alarm_in_us((uint32_t)tdma_scheduler->packet_delay_time_us, send_timer_alarm_callback, inst, true)) < 0) {
+        res = phyRadioTimerStartTaskTimer(&inst->radio_timer, send_timer_alarm_callback, (uint32_t)tdma_scheduler->packet_delay_time_us);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 3);
             return PHY_RADIO_TIMER_ERROR;
         }
@@ -616,38 +593,35 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
     tdma_scheduler->sync_counter = 0;
 
     if (inst->sync_state.mode == PHY_RADIO_MODE_PERIPHERAL) {
-        // Resync the repeating timer
-        if (inst->timer_active) {
-            if (!cancel_repeating_timer(&inst->timer)) {
-                LOG_TIMER_ERROR("Timer error %i\n", 4);
-                return PHY_RADIO_TIMER_ERROR;
-            }
-            inst->timer_active = false;
+        // Resync the repeating timer, by stop and restart
+        int32_t res = phyRadioTimerStopRepeatingTimer(&inst->radio_timer);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
+            LOG_TIMER_ERROR("Timer error %i\n", 4);
         }
 
         // Compute when the next slot should start
         uint64_t next_slot_start = inst->tdma_scheduler.slot_duration - sync_time;
 
-        if ((tdma_scheduler->sync_alarm_id = add_alarm_in_us(next_slot_start, timer_alarm_callback, inst, true)) < 0) {
+        res = phyRadioTimerStartSyncTimer(&inst->radio_timer, sync_timer_alarm_callback, next_slot_start);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 5);
-            return PHY_RADIO_TIMER_ERROR;
+            return res;
         }
 
         // Cancel any active prepare alarm
-        if (tdma_scheduler->prepare_alarm_id != 0) {
-            if (!cancel_alarm(tdma_scheduler->prepare_alarm_id)) {
-                LOG_TIMER_ERROR("Timer error %i\n", 6);
-                return PHY_RADIO_TIMER_ERROR;
-            }
+        res = phyRadioTimerCancelPrepareTimer(&inst->radio_timer);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
+            LOG_TIMER_ERROR("Timer error %i\n", 6);
+            return res;
         }
 
         // Set the next prepare to trigger 1ms before the slot timer
         next_slot_start -= PHY_RADIO_GUARD_TIME_US;
 
-        if ((tdma_scheduler->prepare_alarm_id = add_alarm_in_us(next_slot_start, prepare_alarm_callback, inst, true)) < 0) {
-            tdma_scheduler->prepare_alarm_id = 0;
+        res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, next_slot_start);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 7);
-            return PHY_RADIO_TIMER_ERROR;
+            return res;
         }
 
         // Calculate the offset between our superslot and the central super slot
@@ -676,18 +650,19 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
         // Compute when the next slot should start
         uint64_t next_slot_start = PHY_RADIO_SLOT_TIME_US - sync_time;
 
-        if ((tdma_scheduler->sync_alarm_id = add_alarm_in_us(next_slot_start, timer_alarm_callback, inst, true)) < 0) {
+        int32_t res = phyRadioTimerStartSyncTimer(&inst->radio_timer, sync_timer_alarm_callback, next_slot_start);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 8);
-            return PHY_RADIO_TIMER_ERROR;
+            return res;
         }
 
         // Set the next prepare to trigger 1ms before the slot timer
         next_slot_start -= PHY_RADIO_GUARD_TIME_US;
 
-        if ((tdma_scheduler->prepare_alarm_id = add_alarm_in_us(next_slot_start, prepare_alarm_callback, inst, true)) < 0) {
-            tdma_scheduler->prepare_alarm_id = 0;
+        res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, next_slot_start);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 9);
-            return PHY_RADIO_TIMER_ERROR;
+            return res;
         }
 
         // Initialize the offset time
@@ -1066,11 +1041,6 @@ static int32_t initTdmaScheduler(phyRadioTdma_t *inst) {
     inst->sync_counter = 0;
     inst->in_flight    = false;
 
-    // Reset the alarm ID's
-    inst->prepare_alarm_id = 0;
-    inst->sync_alarm_id = 0;
-    inst->task_alarm_id = 0;
-
     // Reset all time keepers
     inst->central_sync_msg_time = 0;
     inst->pkt_sent_time         = 0;
@@ -1221,44 +1191,8 @@ static int32_t processScan(phyRadio_t *inst) {
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t cancelAllTimers(phyRadio_t *inst) {
-    phyRadioTdma_t* tdma_scheduler = &inst->tdma_scheduler;
-
-    // Cancel active timer
-    if (inst->timer_active) {
-        if (!cancel_repeating_timer(&inst->timer)) {
-            LOG_TIMER_ERROR("Timer error %i\n", 10);
-            return PHY_RADIO_TIMER_ERROR;
-        }
-        inst->timer_active = false;
-    }
-
-    // Cancel any active alarm
-    if (tdma_scheduler->prepare_alarm_id != 0) {
-        if (!cancel_alarm(tdma_scheduler->prepare_alarm_id)) {
-            LOG_TIMER_ERROR("Timer error %i\n", 11);
-            return PHY_RADIO_TIMER_ERROR;
-        }
-        tdma_scheduler->prepare_alarm_id = 0;
-    }
-
-    if (tdma_scheduler->sync_alarm_id != 0) {
-        if (!cancel_alarm(tdma_scheduler->sync_alarm_id)) {
-            LOG_TIMER_ERROR("Timer error %i\n", 12);
-            return PHY_RADIO_TIMER_ERROR;
-        }
-        tdma_scheduler->sync_alarm_id = 0;
-    }
-
-    if (tdma_scheduler->task_alarm_id != 0) {
-        if (!cancel_alarm(tdma_scheduler->task_alarm_id)) {
-            LOG_TIMER_ERROR("Timer error %i\n", 12);
-            return PHY_RADIO_TIMER_ERROR;
-        }
-        tdma_scheduler->task_alarm_id = 0;
-    }
-
-    return PHY_RADIO_SUCCESS;
+static inline int32_t cancelAllTimers(phyRadio_t *inst) {
+    return phyRadioTimerCancelAll(&inst->radio_timer);
 }
 
 static int32_t processPeripheral(phyRadio_t *inst) {
@@ -1430,6 +1364,11 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
         return PHY_RADIO_NULL_ERROR;
     }
 
+    int32_t res = phyRadioTimerInit(&inst->radio_timer);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
+        return res;
+    }
+
     // Init the halRadio and set the receiver address
     halRadioConfig_t hal_config = {
         .bitrate = PHY_RADIO_BIT_RATE,
@@ -1439,8 +1378,7 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
         .power_dbm  = PHY_RADIO_DEFAULT_TX_POWER_DBM,
     };
 
-    int32_t res = halRadioInit(&inst->hal_radio_inst, hal_config);
-
+    res = halRadioInit(&inst->hal_radio_inst, hal_config);
     if (res != HAL_RADIO_SUCCESS) {
         return res;
     }
@@ -1517,13 +1455,10 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
     }
 
     if (timeout_ms > 0) {
-        if (inst->tdma_scheduler.task_alarm_id != 0) {
+        timeout_ms = timeout_ms*1000; // Convert to us
+        res = phyRadioTimerStartTaskTimer(&inst->radio_timer, scan_timer_alarm_callback, timeout_ms);
+        if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 13);
-            return PHY_RADIO_TIMER_ERROR;
-        }
-
-        if ((inst->tdma_scheduler.task_alarm_id = add_alarm_in_ms(timeout_ms, scan_timer_alarm_callback, inst, true)) < 0) {
-            LOG_TIMER_ERROR("Timer error %i\n", 14);
             return PHY_RADIO_TIMER_ERROR;
         }
     }
@@ -1563,12 +1498,11 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     }
 
     // Start broadcasting a sync message to enable other units to adjust their clocks
-
-    if (!add_repeating_timer_us(PHY_RADIO_SLOT_TIME_US, repeating_timer_callback, inst, &inst->timer)) {
+    res = phyRadioTimerStartRepeatingTimer(&inst->radio_timer, repeating_timer_callback, PHY_RADIO_SLOT_TIME_US);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
         LOG_TIMER_ERROR("Timer error %i\n", 15);
-        return PHY_RADIO_TIMER_ERROR;
+        return res;
     }
-    inst->timer_active = true;
 
     return PHY_RADIO_SUCCESS;
 }
