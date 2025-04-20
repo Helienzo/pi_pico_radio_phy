@@ -599,8 +599,7 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
         if (slot_diff < PHY_RADIO_SLOT_TIME_US && slot_diff > -PHY_RADIO_SLOT_TIME_US) {
             // 1) compute the per‐slot normalized error
             float offset_us = (float)slot_diff;
-            float err = (offset_us - (float)sync_time)
-                        * tdma_scheduler->inverse_of_num_slots;
+            float err = (offset_us - (float)sync_time) * tdma_scheduler->inverse_of_num_slots;
 
             // 2) P term
             float P = PHY_RADIO_PID_KP * err;

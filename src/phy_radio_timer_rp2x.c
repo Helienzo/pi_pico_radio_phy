@@ -29,6 +29,10 @@
 #include "hardware/clocks.h"
 #include "math.h"
 
+#ifndef PHY_RADIO_TIMER_PWM_SLICE
+#define PHY_RADIO_TIMER_PWM_SLICE 0
+#endif /* PHY_RADIO_TIMER_PWM_SLICE */
+
 struct phyRadioTimerInternal {
     bool       repeating_timer_active;
     float      clk_div;
@@ -75,7 +79,7 @@ static void repeating_timer_callback(void) {
     // Get the current phy radio instance
     phyRadioTimer_t *inst =  timer_data.inst;
 
-    pwm_clear_irq(0);
+    pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
     inst->repeating_cb(inst);
 }
 
@@ -102,19 +106,21 @@ int32_t phyRadioTimerInit(phyRadioTimer_t *inst) {
     inst->_private     = &timer_data;
     timer_data.inst    = inst;
 
+    // Compute the closest clockdiv to the expected slot duration with some margin
     float sys_hz = (float)clock_get_hz(clk_sys);
-    timer_data.clk_div = ceilf((PHY_RADIO_SLOT_TIME_US/1000000.0f)/((65000.0f/sys_hz)));
+    timer_data.clk_div = ceilf(((PHY_RADIO_SLOT_TIME_US + PHY_RADIO_GUARD_TIME_US)/1000000.0f)/((65535.0f/sys_hz)));
+
+    // Compute a factor that can be used to convert from us to tics
     timer_data.clk_converter = 0.000001f/(1.0f/(sys_hz/timer_data.clk_div));
 
-    // Configure PWM slice 0 for a period of period_us
-    uint slice = 0;
+    // Configure PWM slice for a period of period_us
     pwm_config config = pwm_get_default_config();
     pwm_config_set_clkdiv(&config, timer_data.clk_div);  // 1 tick = 1 us
-    pwm_init(slice, &config, false);
+    pwm_init(PHY_RADIO_TIMER_PWM_SLICE, &config, false);
 
     uint32_t ticks = (uint32_t)PHY_RADIO_SLOT_TIME_US * timer_data.clk_converter;
     pwm_config_set_wrap(&config, ticks);
-    pwm_clear_irq(slice);
+    pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
     irq_set_exclusive_handler(PWM_DEFAULT_IRQ_NUM(), repeating_timer_callback);
     irq_set_enabled(PWM_DEFAULT_IRQ_NUM(), true);
 
@@ -264,16 +270,15 @@ int32_t phyRadioTimerStartRepeatingTimer(phyRadioTimer_t *inst, phyRadioTimerCb_
     }
 
     inst->repeating_cb = cb;
-    uint slice = 0;
     uint32_t ticks = (uint32_t)period_us * timer_data.clk_converter;
 
     // Start PWM counter
-    pwm_set_wrap(slice, ticks);
-    pwm_set_counter(slice, 0);
+    pwm_set_wrap(PHY_RADIO_TIMER_PWM_SLICE, ticks);
+    pwm_set_counter(PHY_RADIO_TIMER_PWM_SLICE, 0);
 
     // Enable IRQ on wrap
-    pwm_set_irq_enabled(slice, true);
-    pwm_set_enabled(slice, true);
+    pwm_set_irq_enabled(PHY_RADIO_TIMER_PWM_SLICE, true);
+    pwm_set_enabled(PHY_RADIO_TIMER_PWM_SLICE, true);
 
     // Save state
     timer_data.repeating_timer_active = true;
@@ -283,9 +288,8 @@ int32_t phyRadioTimerStartRepeatingTimer(phyRadioTimer_t *inst, phyRadioTimerCb_
 
 int32_t phyRadioTimerStopRepeatingTimer(phyRadioTimer_t *inst) {
     if (timer_data.repeating_timer_active) {
-        uint slice = 0;
-        pwm_set_irq_enabled(slice, false);
-        pwm_set_enabled(slice, false);
+        pwm_set_irq_enabled(PHY_RADIO_TIMER_PWM_SLICE, false);
+        pwm_set_enabled(PHY_RADIO_TIMER_PWM_SLICE, false);
         timer_data.repeating_timer_active = false;
     }
 
@@ -301,10 +305,8 @@ int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, float new_perio
         return PHY_RADIO_TIMER_ACTIVE_ERROR;
     }
 
-    uint slice = 0;
-
     uint32_t ticks = (uint32_t)(new_period_us * timer_data.clk_converter);
 
-    pwm_set_wrap(slice, ticks);
+    pwm_set_wrap(PHY_RADIO_TIMER_PWM_SLICE, ticks);
     return PHY_RADIO_TIMER_SUCCESS;
 }
