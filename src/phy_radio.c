@@ -597,17 +597,27 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
         int64_t slot_diff = (int64_t)toa - (int64_t)tdma_scheduler->slot_start_time;
         // Do a sanity check of the diff value
         if (slot_diff < PHY_RADIO_SLOT_TIME_US && slot_diff > -PHY_RADIO_SLOT_TIME_US) {
-            float offset = (float)(slot_diff);
-            // Exponential moving average of the difference
-            inst->tdma_scheduler.offset_estimate = inst->tdma_scheduler.offset_estimate*0.05 + offset*0.95;
-            float f_sync_time = (float)(sync_time);
+            // 1) compute the per‐slot normalized error
+            float offset_us = (float)slot_diff;
+            float err = (offset_us - (float)sync_time)
+                        * tdma_scheduler->inverse_of_num_slots;
 
-            // Compute the error, per slot
-            float err = (inst->tdma_scheduler.offset_estimate - f_sync_time) * inst->tdma_scheduler.inverse_of_num_slots;
+            // 2) P term
+            float P = PHY_RADIO_PID_KP * err;
 
-            // Compute the new slot duration
-            inst->tdma_scheduler.float_slot_duration = inst->tdma_scheduler.float_slot_duration*0.999 + (inst->tdma_scheduler.float_slot_duration + err)*0.001;
-            inst->tdma_scheduler.slot_duration = (int32_t)(inst->tdma_scheduler.float_slot_duration);
+            // 3) I term
+            tdma_scheduler->integral += err;
+            float I = PHY_RADIO_PID_KI * tdma_scheduler->integral;
+
+            // 4) D term
+            float derivative = err - tdma_scheduler->error_prev;
+            float D = PHY_RADIO_PID_KD * derivative;
+            tdma_scheduler->error_prev = err;
+
+            // 5) combine & apply
+            float control = P + I + D;
+            tdma_scheduler->float_slot_duration += control;
+            tdma_scheduler->slot_duration = (int32_t)tdma_scheduler->float_slot_duration;
 
             int32_t res = phyRadioTimerUpdateRepeatingTimer(&inst->radio_timer, inst->tdma_scheduler.float_slot_duration);
             if (res != PHY_RADIO_TIMER_SUCCESS) {
@@ -616,8 +626,8 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
             }
 
             LOG_V_DEBUG("Sync time %u, offset %i, diff %i\n", sync_time, (int32_t)inst->tdma_scheduler.offset_estimate, (int32_t)slot_diff);
-            LOG("Duriation Error: %i us\n", (int32_t)err);
-            LOG("SLOT DURATION:   %i us\n", (int32_t)inst->tdma_scheduler.slot_duration);
+            LOG_DEBUG("Duriation Error: %i us\n", (int32_t)err);
+            LOG_DEBUG("SLOT DURATION:   %i us\n", (int32_t)inst->tdma_scheduler.slot_duration);
         }
     } else {
         // New sync detected, reset the counters
@@ -643,7 +653,6 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
 
         // Initialize the offset time
         float f_sync_time = (float)sync_time;
-        inst->tdma_scheduler.offset_estimate = f_sync_time;
 
         // Initialize all queues, TODO fix the assignment
         for (uint32_t i = 0; i < PHY_RADIO_NUM_SLOTS; i++) {
@@ -1023,7 +1032,10 @@ static int32_t initTdmaScheduler(phyRadioTdma_t *inst) {
     inst->slot_start_time       = 0;
     inst->slot_duration         = PHY_RADIO_SLOT_TIME_US;
     inst->float_slot_duration   = (float)PHY_RADIO_SLOT_TIME_US;
-    inst->offset_estimate       = 0.0;
+
+    inst->error_prev = 0.0f;
+    inst->integral = 0.0f;
+
     inst->inverse_of_num_slots = 1.0/((float)PHY_RADIO_SUPERFRAME_LEN);
 
     // Initialize all queues

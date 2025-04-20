@@ -125,6 +125,18 @@
 #define PHY_RADIO_BROADCAST_ADDR (0xFF)
 #endif /* PHY_RADIO_BROADCAST_ADDR */
 
+#ifndef PHY_RADIO_PID_KP
+#define PHY_RADIO_PID_KP 0.006f
+#endif /* PHY_RADIO_PID_KP */
+
+#ifndef PHY_RADIO_PID_KI
+#define PHY_RADIO_PID_KI 0.00001f
+#endif /* PHY_RADIO_PID_KI */
+
+#ifndef PHY_RADIO_PID_KD
+#define PHY_RADIO_PID_KD 0.06f
+#endif /* PHY_RADIO_PID_KD */
+
 typedef enum {
     PHY_RADIO_INTERRUPT_IN_QUEUE = 1,
     PHY_RADIO_SUCCESS            = 0,
@@ -281,8 +293,12 @@ typedef struct {
     // Due to slight clock drift it might differ from ours
     uint64_t slot_start_time;
     uint64_t slot_duration;
-    float    offset_estimate;
     float    float_slot_duration;
+
+    // PID gains & state
+    float   error_prev;
+    float   integral;
+
     float    inverse_of_num_slots;
 } phyRadioTdma_t;
 
