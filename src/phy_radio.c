@@ -128,7 +128,7 @@ static int32_t manageSyncTimerInterrupt(phyRadio_t *inst) {
 #endif
 
             // Trigger send of a queued packet
-            int32_t res = halRadioQueueSend(&inst->hal_radio_inst);
+            int32_t res = halRadioQueueSend(&inst->hal_radio_inst, false);
             if (res != HAL_RADIO_SUCCESS) {
                 LOG("Failed to queue Send%i\n",res);
                 inst->sync_state.mode = PHY_RADIO_MODE_HAL_ERROR;
@@ -241,7 +241,7 @@ static int32_t managePrepareTimerInterrupt(phyRadio_t *inst) {
 
             // Go to RX mode
             inst->hal_interface.pkt_buffer = &inst->rx_buffer;
-            res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
+            res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, false);
 
             if (res != HAL_RADIO_SUCCESS) {
                 LOG("Failed to receive %i\n", res);
@@ -293,7 +293,7 @@ static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst) {
             inst->tdma_scheduler.pkt_sent_time = time_us_64();
 
             // Trigger send of a queued packet
-            int32_t res = halRadioQueueSend(&inst->hal_radio_inst);
+            int32_t res = halRadioQueueSend(&inst->hal_radio_inst, false);
             if (res != HAL_RADIO_SUCCESS) {
                 LOG("Failed to queue send %i\n", res);
                 inst->sync_state.mode = PHY_RADIO_MODE_HAL_ERROR;
@@ -565,7 +565,7 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
         case PHY_RADIO_MODE_ALOHA: {
             // Return the radio to RX mode
             inst->hal_interface.pkt_buffer = &inst->rx_buffer;
-            int32_t res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
+            int32_t res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, true);
             // BUSY is ok, it most likely means a new package has been queued
             if (res != HAL_RADIO_SUCCESS && res != HAL_RADIO_BUSY) {
                 LOG("Return to RX failed %i\n", res);
@@ -1336,7 +1336,7 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
             // This indicates that a bad interrupt occured
             LOG("Hal Radio Receive failed\n");
             // Just restart radio reception
-            res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
+            res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, true);
             break;
         default:
             break;
@@ -1435,7 +1435,7 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
 
     // Scan for the broadcast address
     inst->hal_interface.pkt_buffer = &inst->rx_buffer;
-    res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
+    res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, true);
 
     if (res != HAL_RADIO_SUCCESS) {
         return res;
@@ -1506,7 +1506,7 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst) {
     }
 
     inst->hal_interface.pkt_buffer = &inst->rx_buffer;
-    res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface);
+    res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, true);
 
     if (res != HAL_RADIO_SUCCESS) {
         return res;
