@@ -266,7 +266,7 @@ int32_t phyRadioTimerStartRepeatingTimer(phyRadioTimer_t *inst, phyRadioTimerCb_
     inst->repeating_cb = cb;
     uint slice = 0;
     uint32_t ticks = (uint32_t)period_us * timer_data.clk_converter;
- 
+
     // Start PWM counter
     pwm_set_wrap(slice, ticks);
     pwm_set_counter(slice, 0);
@@ -296,13 +296,15 @@ int32_t phyRadioTimerStopRepeatingTimer(phyRadioTimer_t *inst) {
 /**
  * Update the PWM period on the fly
  */
-int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, uint32_t new_period_us) {
+int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, float new_period_us) {
     if (!timer_data.repeating_timer_active) {
         return PHY_RADIO_TIMER_ACTIVE_ERROR;
     }
 
-    uint32_t ticks = (uint32_t)new_period_us * timer_data.clk_converter;
     uint slice = 0;
+
+    uint32_t ticks = (uint32_t)(new_period_us * timer_data.clk_converter);
+
     pwm_set_wrap(slice, ticks);
     return PHY_RADIO_TIMER_SUCCESS;
 }

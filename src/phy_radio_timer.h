@@ -148,6 +148,6 @@ int32_t phyRadioTimerStopRepeatingTimer(phyRadioTimer_t *inst);
  * Input: Period time in micro seconds
  * Returns: phyRadioTimerErr_t
  */
-int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, uint32_t new_period_us);
+int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, float new_period_us);
 
 #endif /* PHY_RADIO_TIMER_H */
