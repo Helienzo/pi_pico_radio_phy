@@ -99,6 +99,7 @@ target_include_directories(radio_phy_tdd_central PRIVATE
 
 # Add any user requested libraries
 target_link_libraries(radio_phy_tdd_central 
+        hardware_pwm
         hardware_spi
         rp2x_rfm69_lib
         c_buffer
