@@ -13,6 +13,7 @@ PICO 18 - SCK
 PICO 19 - MOSI  
 PICO 20 - RESET  
 PICO 21 - DIO0  
+PICO 15 - DIO1
   
 ## Documentation
 The module supports three modes of operation.  

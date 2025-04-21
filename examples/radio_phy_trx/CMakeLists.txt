@@ -35,7 +35,7 @@ pico_sdk_init()
 FetchContent_Declare(
   rp2x_rfm69
   GIT_REPOSITORY https://github.com/Helienzo/rp2x_rfm69.git
-  GIT_TAG        feature/add_get_helpers
+  GIT_TAG        main
 )
 FetchContent_MakeAvailable(rp2x_rfm69)
 
@@ -99,6 +99,7 @@ target_include_directories(radio_phy_trx PRIVATE
 
 # Add any user requested libraries
 target_link_libraries(radio_phy_trx 
+        hardware_pwm
         hardware_spi
         rp2x_rfm69_lib
         c_buffer
