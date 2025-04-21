@@ -50,7 +50,11 @@ static int64_t task_timer_alarm_callback(alarm_id_t id, void *user_data) {
     phyRadioTimer_t *inst =  (phyRadioTimer_t*)user_data;
     inst->_private->task_alarm_id = 0;
 
-    inst->task_cb(inst);
+    if (inst->task_cb != NULL) {
+        inst->task_cb(inst);
+    } else {
+        panic("Task timer callback is NULL\n");
+    }
 
     return PHY_RADIO_TIMER_SUCCESS;
 }
@@ -60,7 +64,11 @@ static int64_t sync_timer_alarm_callback(alarm_id_t id, void *user_data) {
     phyRadioTimer_t *inst =  (phyRadioTimer_t*)user_data;
     inst->_private->sync_alarm_id = 0;
 
-    inst->sync_cb(inst);
+    if (inst->sync_cb != NULL) {
+        inst->sync_cb(inst);
+    } else {
+        panic("Sync timer callback is NULL\n");
+    }
 
     return PHY_RADIO_TIMER_SUCCESS;
 }
@@ -70,7 +78,11 @@ static int64_t prepare_timer_alarm_callback(alarm_id_t id, void *user_data) {
     phyRadioTimer_t *inst =  (phyRadioTimer_t*)user_data;
     inst->_private->prepare_alarm_id = 0;
 
-    inst->prepare_cb(inst);
+    if (inst->prepare_cb != NULL) {
+        inst->prepare_cb(inst);
+    } else {
+        panic("Prepare timer callback is NULL\n");
+    }
 
     return PHY_RADIO_TIMER_SUCCESS;
 }
@@ -80,7 +92,11 @@ static void repeating_timer_callback(void) {
     phyRadioTimer_t *inst =  timer_data.inst;
 
     pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
-    inst->repeating_cb(inst);
+    if (inst->repeating_cb != NULL) {
+        inst->repeating_cb(inst);
+    } else {
+        panic("Repeating timer callback is NULL\n");
+    }
 }
 
 /**
@@ -150,11 +166,6 @@ int32_t phyRadioTimerDeInit(phyRadioTimer_t *inst) {
 }
 
 int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst) {
-    inst->sync_cb = NULL;
-    inst->task_cb = NULL;
-    inst->prepare_cb = NULL;
-    inst->repeating_cb = NULL;
-
     // Cancel active timer
     phyRadioTimerStopRepeatingTimer(inst);
 
@@ -164,6 +175,7 @@ int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst) {
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
         inst->_private->prepare_alarm_id = 0;
+        inst->prepare_cb = NULL;
     }
 
     if (inst->_private->sync_alarm_id != 0) {
@@ -171,6 +183,7 @@ int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst) {
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
         inst->_private->sync_alarm_id = 0;
+        inst->sync_cb = NULL;
     }
 
     if (inst->_private->task_alarm_id != 0) {
@@ -178,6 +191,7 @@ int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst) {
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
         inst->_private->task_alarm_id = 0;
+        inst->task_cb = NULL;
     }
 
     return PHY_RADIO_TIMER_SUCCESS;
@@ -185,11 +199,12 @@ int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst) {
 
 int32_t phyRadioTimerStartSyncTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us) {
     if (inst->_private->sync_alarm_id == 0) {
+        inst->sync_cb = cb; // This must be set before adding the alarm as a timout might occure during the add
         if ((inst->_private->sync_alarm_id = add_alarm_in_us(time_us, sync_timer_alarm_callback, inst, true)) < 0) {
             inst->_private->sync_alarm_id = 0;
+            inst->sync_cb = NULL;
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
-        inst->sync_cb = cb;
     } else {
         return PHY_RADIO_TIMER_ACTIVE_ERROR;
     }
@@ -212,11 +227,12 @@ int32_t phyRadioTimerCancelSyncTimer(phyRadioTimer_t *inst) {
 
 int32_t phyRadioTimerStartTaskTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us) {
     if (inst->_private->task_alarm_id == 0) {
+        inst->task_cb = cb; // This must be set before adding the alarm as a timout might occure during the add
         if ((inst->_private->task_alarm_id = add_alarm_in_us(time_us, task_timer_alarm_callback, inst, true)) < 0) {
             inst->_private->task_alarm_id = 0;
+            inst->task_cb = NULL;
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
-        inst->task_cb = cb;
     } else {
         return PHY_RADIO_TIMER_ACTIVE_ERROR;
     }
@@ -239,11 +255,12 @@ int32_t phyRadioTimerCancelTaskTimer(phyRadioTimer_t *inst) {
 
 int32_t phyRadioTimerStartPrepareTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us) {
     if (inst->_private->prepare_alarm_id == 0) {
+        inst->prepare_cb = cb; // This must be set before adding the alarm as a timout might occure during the add
         if ((inst->_private->prepare_alarm_id = add_alarm_in_us(time_us, prepare_timer_alarm_callback, inst, true)) < 0) {
             inst->_private->prepare_alarm_id = 0;
+            inst->prepare_cb = NULL;
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
-        inst->prepare_cb = cb;
     } else {
         return PHY_RADIO_TIMER_ACTIVE_ERROR;
     }
