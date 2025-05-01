@@ -32,6 +32,7 @@ typedef enum {
     PHY_RADIO_TIMER_HAL_ERROR         = -21003,
     PHY_RADIO_TIMER_DOUBLE_INIT_ERROR = -21004,
     PHY_RADIO_TIMER_ACTIVE_ERROR      = -21005,
+    PHY_RADIO_TIMER_NOT_ACTIVE_ERROR  = -21006,
 } phyRadioTimerErr_t;
 
 typedef struct phyRadioTimer phyRadioTimer_t;
@@ -149,5 +150,21 @@ int32_t phyRadioTimerStopRepeatingTimer(phyRadioTimer_t *inst);
  * Returns: phyRadioTimerErr_t
  */
 int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, float new_period_us);
+
+/**
+ * Get time until next repeating timer
+ * Input: phyRadioTimer instance
+ * Input: Time until next fire
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioRepeatingTimerGetTimeToNext(phyRadioTimer_t *inst, uint32_t *period_us);
+
+/**
+ * Get time until next prepare timer
+ * Input: phyRadioTimer instance
+ * Input: Time until next fire
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioPrepareTimerGetTimeToNext(phyRadioTimer_t *inst, uint32_t *period_us);
 
 #endif /* PHY_RADIO_TIMER_H */

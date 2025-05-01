@@ -312,10 +312,13 @@ static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst) {
     }
 
     // Schedule the next prepare alarm
-    int32_t res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, PHY_RADIO_TX_PREPARE_US);
+    uint32_t til_next = 0;
+    phyRadioRepeatingTimerGetTimeToNext(&inst->radio_timer, &til_next);
+
+    int32_t res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, til_next - PHY_RADIO_GUARD_TIME_US);
+
     if (res != PHY_RADIO_TIMER_SUCCESS) {
         inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
-
         LOG_TIMER_ERROR("Timer error %i\n", 3);
     }
 
@@ -1485,6 +1488,12 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     }
 
     // Start broadcasting a sync message to enable other units to adjust their clocks
+    res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, PHY_RADIO_TX_PREPARE_US);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
+        LOG_TIMER_ERROR("Timer error %i\n", 150);
+        return res;
+    }
+
     res = phyRadioTimerStartRepeatingTimer(&inst->radio_timer, repeating_timer_callback, PHY_RADIO_SLOT_TIME_US);
     if (res != PHY_RADIO_TIMER_SUCCESS) {
         LOG_TIMER_ERROR("Timer error %i\n", 15);

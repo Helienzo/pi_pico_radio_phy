@@ -33,13 +33,22 @@
 #define PHY_RADIO_TIMER_PWM_SLICE 0
 #endif /* PHY_RADIO_TIMER_PWM_SLICE */
 
+#ifndef PHY_RADIO_PREP_TIMER_PWM_SLICE
+#define PHY_RADIO_PREP_TIMER_PWM_SLICE 1
+#endif /* PHY_RADIO_PREP_TIMER_PWM_SLICE */
+
+
 struct phyRadioTimerInternal {
     bool       repeating_timer_active;
+    uint16_t   ticks;
     float      clk_div;
     float      clk_converter;
+    float      inv_clk_converter;
     alarm_id_t task_alarm_id;    // Timer alarm used for time dependent tasks
     alarm_id_t sync_alarm_id;    // Timer alarm used for synchronization with Central
-    alarm_id_t prepare_alarm_id; // Timer alarm used to start the guard period
+
+    bool       prepare_timer_active; // Timer alarm used to start the guard period
+    uint16_t   ticks_prep;
     phyRadioTimer_t *inst;
 };
 
@@ -73,29 +82,32 @@ static int64_t sync_timer_alarm_callback(alarm_id_t id, void *user_data) {
     return PHY_RADIO_TIMER_SUCCESS;
 }
 
-static int64_t prepare_timer_alarm_callback(alarm_id_t id, void *user_data) {
-    // Get the current phy radio instance
-    phyRadioTimer_t *inst =  (phyRadioTimer_t*)user_data;
-    inst->_private->prepare_alarm_id = 0;
-
-    if (inst->prepare_cb != NULL) {
-        inst->prepare_cb(inst);
-    } else {
-        panic("Prepare timer callback is NULL\n");
-    }
-
-    return PHY_RADIO_TIMER_SUCCESS;
-}
-
 static void repeating_timer_callback(void) {
     // Get the current phy radio instance
     phyRadioTimer_t *inst =  timer_data.inst;
 
-    pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
-    if (inst->repeating_cb != NULL) {
-        inst->repeating_cb(inst);
-    } else {
-        panic("Repeating timer callback is NULL\n");
+    uint32_t irq_status = pwm_get_irq0_status_mask();
+
+    if (irq_status & (1 << PHY_RADIO_PREP_TIMER_PWM_SLICE)) {
+        pwm_clear_irq(PHY_RADIO_PREP_TIMER_PWM_SLICE);
+        pwm_set_irq_enabled(PHY_RADIO_PREP_TIMER_PWM_SLICE, false);
+        pwm_set_enabled(PHY_RADIO_PREP_TIMER_PWM_SLICE, false);
+        timer_data.prepare_timer_active = false;
+
+        if (inst->prepare_cb != NULL) {
+            inst->prepare_cb(inst);
+        } else {
+            panic("Prepare timer callback is NULL\n");
+        }
+    }
+
+    if (irq_status & (1 << PHY_RADIO_TIMER_PWM_SLICE)) {
+        pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
+        if (inst->repeating_cb != NULL) {
+            inst->repeating_cb(inst);
+        } else {
+            panic("Repeating timer callback is NULL\n");
+        }
     }
 }
 
@@ -128,22 +140,30 @@ int32_t phyRadioTimerInit(phyRadioTimer_t *inst) {
 
     // Compute a factor that can be used to convert from us to tics
     timer_data.clk_converter = 0.000001f/(1.0f/(sys_hz/timer_data.clk_div));
+    timer_data.inv_clk_converter = 1.0/timer_data.clk_converter;
 
     // Configure PWM slice for a period of period_us
     pwm_config config = pwm_get_default_config();
     pwm_config_set_clkdiv(&config, timer_data.clk_div);  // 1 tick = 1 us
     pwm_init(PHY_RADIO_TIMER_PWM_SLICE, &config, false);
 
+    // Configure PWM slice for prepare timer with same settins as periodic timer
+    pwm_config_set_clkdiv(&config, timer_data.clk_div);  // 1 tick = 1 us
+    pwm_init(PHY_RADIO_PREP_TIMER_PWM_SLICE, &config, false);
+
     uint32_t ticks = (uint32_t)PHY_RADIO_SLOT_TIME_US * timer_data.clk_converter;
     pwm_config_set_wrap(&config, ticks);
     pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
     irq_set_exclusive_handler(PWM_DEFAULT_IRQ_NUM(), repeating_timer_callback);
     irq_set_enabled(PWM_DEFAULT_IRQ_NUM(), true);
+    irq_set_priority(PWM_DEFAULT_IRQ_NUM(), 0);
+
+    pwm_clear_irq(PHY_RADIO_PREP_TIMER_PWM_SLICE);
 
     timer_data.task_alarm_id          = 0;    // Timer alarm used for time dependent tasks
-    timer_data.prepare_alarm_id       = 0; // Timer alarm used to start the guard period
     timer_data.sync_alarm_id          = 0;    // Timer alarm used for synchronization with Central
     timer_data.repeating_timer_active = false;
+    timer_data.prepare_timer_active   = false;
 
     return PHY_RADIO_TIMER_SUCCESS;
 }
@@ -170,13 +190,7 @@ int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst) {
     phyRadioTimerStopRepeatingTimer(inst);
 
     // Cancel any active alarm
-    if (inst->_private->prepare_alarm_id != 0) {
-        if (!cancel_alarm(inst->_private->prepare_alarm_id)) {
-            return PHY_RADIO_TIMER_HAL_ERROR;
-        }
-        inst->_private->prepare_alarm_id = 0;
-        inst->prepare_cb = NULL;
-    }
+    phyRadioTimerCancelPrepareTimer(inst);
 
     if (inst->_private->sync_alarm_id != 0) {
         if (!cancel_alarm(inst->_private->sync_alarm_id)) {
@@ -254,29 +268,64 @@ int32_t phyRadioTimerCancelTaskTimer(phyRadioTimer_t *inst) {
 }
 
 int32_t phyRadioTimerStartPrepareTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us) {
-    if (inst->_private->prepare_alarm_id == 0) {
-        inst->prepare_cb = cb; // This must be set before adding the alarm as a timout might occure during the add
-        if ((inst->_private->prepare_alarm_id = add_alarm_in_us(time_us, prepare_timer_alarm_callback, inst, true)) < 0) {
-            inst->_private->prepare_alarm_id = 0;
-            inst->prepare_cb = NULL;
-            return PHY_RADIO_TIMER_HAL_ERROR;
-        }
-    } else {
+    if (timer_data.prepare_timer_active) {
         return PHY_RADIO_TIMER_ACTIVE_ERROR;
     }
+
+    inst->prepare_cb = cb;
+    uint32_t ticks = (uint32_t)(time_us * timer_data.clk_converter);
+    timer_data.ticks_prep = ticks;
+
+    // Start PWM counter
+    pwm_set_wrap(PHY_RADIO_PREP_TIMER_PWM_SLICE, ticks);
+    pwm_set_counter(PHY_RADIO_PREP_TIMER_PWM_SLICE, 0);
+
+    // Enable IRQ on wrap
+    pwm_clear_irq(PHY_RADIO_PREP_TIMER_PWM_SLICE);
+    pwm_set_irq_enabled(PHY_RADIO_PREP_TIMER_PWM_SLICE, true);
+    pwm_set_enabled(PHY_RADIO_PREP_TIMER_PWM_SLICE, true);
+
+    // Save state
+    timer_data.prepare_timer_active = true;
 
     return PHY_RADIO_TIMER_SUCCESS;
 }
 
 int32_t phyRadioTimerCancelPrepareTimer(phyRadioTimer_t *inst) {
-    if (inst->_private->prepare_alarm_id != 0) {
-        if (!cancel_alarm(inst->_private->prepare_alarm_id)) {
-            return PHY_RADIO_TIMER_HAL_ERROR;
-        }
+    inst->prepare_cb = NULL;
+
+    if (timer_data.prepare_timer_active) {
+        pwm_set_irq_enabled(PHY_RADIO_PREP_TIMER_PWM_SLICE, false);
+        pwm_set_enabled(PHY_RADIO_PREP_TIMER_PWM_SLICE, false);
+        pwm_clear_irq(PHY_RADIO_PREP_TIMER_PWM_SLICE);
+        timer_data.prepare_timer_active = false;
     }
 
-    inst->_private->prepare_alarm_id = 0;
-    inst->prepare_cb = NULL;
+    return PHY_RADIO_TIMER_SUCCESS;
+}
+
+int32_t phyRadioPrepareTimerGetTimeToNext(phyRadioTimer_t *inst, uint32_t *period_us) {
+    if (!inst->_private->prepare_timer_active) {
+        *period_us = 0;
+        return PHY_RADIO_TIMER_NOT_ACTIVE_ERROR;
+    }
+
+    uint16_t curr_count = pwm_get_counter(PHY_RADIO_PREP_TIMER_PWM_SLICE);
+
+    *period_us = (uint32_t)(timer_data.ticks_prep - curr_count) * timer_data.inv_clk_converter;
+
+    return PHY_RADIO_TIMER_SUCCESS;
+}
+
+int32_t phyRadioRepeatingTimerGetTimeToNext(phyRadioTimer_t *inst, uint32_t *period_us) {
+    if (!inst->_private->repeating_timer_active) {
+        *period_us = 0;
+        return PHY_RADIO_TIMER_NOT_ACTIVE_ERROR;
+    }
+
+    uint16_t curr_count = pwm_get_counter(PHY_RADIO_TIMER_PWM_SLICE);
+
+    *period_us = (uint32_t)(timer_data.ticks - curr_count) * timer_data.inv_clk_converter;
 
     return PHY_RADIO_TIMER_SUCCESS;
 }
@@ -289,11 +338,14 @@ int32_t phyRadioTimerStartRepeatingTimer(phyRadioTimer_t *inst, phyRadioTimerCb_
     inst->repeating_cb = cb;
     uint32_t ticks = (uint32_t)period_us * timer_data.clk_converter;
 
+    timer_data.ticks = ticks;
+
     // Start PWM counter
     pwm_set_wrap(PHY_RADIO_TIMER_PWM_SLICE, ticks);
     pwm_set_counter(PHY_RADIO_TIMER_PWM_SLICE, 0);
 
     // Enable IRQ on wrap
+    pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
     pwm_set_irq_enabled(PHY_RADIO_TIMER_PWM_SLICE, true);
     pwm_set_enabled(PHY_RADIO_TIMER_PWM_SLICE, true);
 
@@ -323,6 +375,7 @@ int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, float new_perio
     }
 
     uint32_t ticks = (uint32_t)(new_period_us * timer_data.clk_converter);
+    timer_data.ticks = ticks;
 
     pwm_set_wrap(PHY_RADIO_TIMER_PWM_SLICE, ticks);
     return PHY_RADIO_TIMER_SUCCESS;

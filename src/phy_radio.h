@@ -22,6 +22,10 @@
 
 #ifndef PHY_RADIO_H
 #define PHY_RADIO_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "hal_radio.h"
 #include "static_queue.h"
 #include "c_buffer.h"
@@ -57,7 +61,7 @@
 #endif /* PHY_RADIO_NUM_SLOTS */
 
 #ifndef PHY_RADIO_NUM_ITEMS_SLOTS
-#define PHY_RADIO_NUM_ITEMS_SLOTS (3)
+#define PHY_RADIO_NUM_ITEMS_SLOTS (4)
 #endif /* PHY_RADIO_NUM_ITEMS_SLOTS */
 
 #ifndef PHY_RADIO_SUPERFRAME_LEN
@@ -397,4 +401,7 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
  */
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
 
+#ifdef __cplusplus
+}
+#endif
 #endif /* PHY_RADIO_H */
