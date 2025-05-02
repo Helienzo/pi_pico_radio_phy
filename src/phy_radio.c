@@ -102,7 +102,7 @@ static int32_t sync_timer_alarm_callback(phyRadioTimer_t *interface) {
     inst->tdma_scheduler.slot_start_time = time_us_64();
 
     // Start the repeating timer, do as little as possible before this point.
-    if (PHY_RADIO_TIMER_SUCCESS != phyRadioTimerStartRepeatingTimer(&inst->radio_timer, repeating_timer_callback, inst->tdma_scheduler.slot_duration)) {
+    if (PHY_RADIO_TIMER_SUCCESS != phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, inst->tdma_scheduler.slot_duration, PHY_RADIO_GUARD_TIME_US)) {
         inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
         LOG_TIMER_ERROR("Timer error %i\n", 1);
     }
@@ -145,13 +145,6 @@ static int32_t manageSyncTimerInterrupt(phyRadio_t *inst) {
         default:
             // Do nothing
             break;
-    }
-
-    // Schedule the next prepare alarm
-    int32_t res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, PHY_RADIO_TX_PREPARE_US);
-    if (res != PHY_RADIO_TIMER_SUCCESS) {
-        inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
-        LOG_TIMER_ERROR("Timer error %i\n", 2);
     }
 
     // Set the interrupt flag for next processing
@@ -310,17 +303,6 @@ static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst) {
         default:
             // Do nothing
             break;
-    }
-
-    // Schedule the next prepare alarm
-    uint32_t til_next = 0;
-    phyRadioRepeatingTimerGetTimeToNext(&inst->radio_timer, &til_next);
-
-    int32_t res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, til_next - PHY_RADIO_GUARD_TIME_US);
-
-    if (res != PHY_RADIO_TIMER_SUCCESS) {
-        inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
-        LOG_TIMER_ERROR("Timer error %i\n", 3);
     }
 
     // Set the interrupt flag for next processing
@@ -533,8 +515,10 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
             if (inst->tdma_scheduler.in_flight && (inst->tdma_scheduler.active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC)) {
                 cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, send_result);
             } else {
+                // This would be the sync packet. And it should be fine.
                 LOG("Sent but no packet!??\n");
-                return PHY_RADIO_GEN_ERROR;
+                // This is probably Ok!
+                //return PHY_RADIO_GEN_ERROR;
             }
 
             inst->tdma_scheduler.in_flight   = false;
@@ -653,7 +637,7 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
             tdma_scheduler->float_slot_duration += control;
             tdma_scheduler->slot_duration = (int32_t)tdma_scheduler->float_slot_duration;
 
-            int32_t res = phyRadioTimerUpdateRepeatingTimer(&inst->radio_timer, inst->tdma_scheduler.float_slot_duration);
+            int32_t res = phyRadioTimerUpdateCombinedTimer(&inst->radio_timer, inst->tdma_scheduler.float_slot_duration);
             if (res != PHY_RADIO_TIMER_SUCCESS) {
                 LOG_TIMER_ERROR("Timer error %i\n", 6);
                 return res;
@@ -679,7 +663,7 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
         // Set the next prepare to trigger 1ms before the slot timer
         next_slot_start -= PHY_RADIO_GUARD_TIME_US;
 
-        res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, next_slot_start);
+        res = phyRadioTimerStartSinglePrepareTimer(&inst->radio_timer, prepare_alarm_callback, next_slot_start);
         if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 10);
             return res;
@@ -1546,13 +1530,7 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     }
 
     // Start broadcasting a sync message to enable other units to adjust their clocks
-    res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, PHY_RADIO_TX_PREPARE_US);
-    if (res != PHY_RADIO_TIMER_SUCCESS) {
-        LOG_TIMER_ERROR("Timer error %i\n", 150);
-        return res;
-    }
-
-    res = phyRadioTimerStartRepeatingTimer(&inst->radio_timer, repeating_timer_callback, PHY_RADIO_SLOT_TIME_US);
+    res = phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, PHY_RADIO_SLOT_TIME_US, PHY_RADIO_GUARD_TIME_US);
     if (res != PHY_RADIO_TIMER_SUCCESS) {
         LOG_TIMER_ERROR("Timer error %i\n", 15);
         return res;
