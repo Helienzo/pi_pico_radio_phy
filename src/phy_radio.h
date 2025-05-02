@@ -401,6 +401,14 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
  */
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
 
+/**
+ * Clear all messages from a slot
+ * Input: phyRadio instance
+ * Input: Slot to clear
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot);
+
 #ifdef __cplusplus
 }
 #endif
