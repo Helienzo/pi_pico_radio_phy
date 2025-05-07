@@ -114,7 +114,7 @@ extern "C" {
 
 // Radio configuration
 #ifndef PHY_RADIO_DEFAULT_CHANNEL
-#define PHY_RADIO_DEFAULT_CHANNEL (868)
+#define PHY_RADIO_DEFAULT_CHANNEL (868000000)
 #endif /* PHY_RADIO_DEFAULT_CHANNEL */
 
 #ifndef PHY_RADIO_BIT_RATE
