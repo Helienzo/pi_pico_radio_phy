@@ -69,6 +69,7 @@ static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyR
 static int32_t manageSyncTimerInterrupt(phyRadio_t *inst);
 static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst);
 static int32_t managePrepareTimerInterrupt(phyRadio_t *inst);
+static int32_t clearAndNotifyPacketQueueInSlot(phyRadio_t *inst, phyRadioTdma_t *scheduler, uint8_t slot);
 
 
 static int32_t send_timer_alarm_callback(phyRadioTimer_t *interface) {
@@ -101,7 +102,7 @@ static int32_t sync_timer_alarm_callback(phyRadioTimer_t *interface) {
     inst->tdma_scheduler.slot_start_time = time_us_64();
 
     // Start the repeating timer, do as little as possible before this point.
-    if (PHY_RADIO_TIMER_SUCCESS != phyRadioTimerStartRepeatingTimer(&inst->radio_timer, repeating_timer_callback, inst->tdma_scheduler.slot_duration)) {
+    if (PHY_RADIO_TIMER_SUCCESS != phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, inst->tdma_scheduler.slot_duration, PHY_RADIO_GUARD_TIME_US)) {
         inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
         LOG_TIMER_ERROR("Timer error %i\n", 1);
     }
@@ -144,13 +145,6 @@ static int32_t manageSyncTimerInterrupt(phyRadio_t *inst) {
         default:
             // Do nothing
             break;
-    }
-
-    // Schedule the next prepare alarm
-    int32_t res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, PHY_RADIO_TX_PREPARE_US);
-    if (res != PHY_RADIO_TIMER_SUCCESS) {
-        inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
-        LOG_TIMER_ERROR("Timer error %i\n", 2);
     }
 
     // Set the interrupt flag for next processing
@@ -311,14 +305,6 @@ static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst) {
             break;
     }
 
-    // Schedule the next prepare alarm
-    int32_t res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, PHY_RADIO_TX_PREPARE_US);
-    if (res != PHY_RADIO_TIMER_SUCCESS) {
-        inst->sync_state.mode = PHY_RADIO_MODE_TIMER_ERROR;
-
-        LOG_TIMER_ERROR("Timer error %i\n", 3);
-    }
-
     // Set the interrupt flag for next processing
     inst->timer_interrupt = PHY_RADIO_INT_SLOT_TIMER;
 
@@ -423,7 +409,16 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     if ((packet_time_us + tdma_scheduler->packet_delay_time_us + PHY_RADIO_PACKET_GUARD_TIME_US) > time_remaining_in_slot) {
         // We do not have time for this packet, wait for next slot
         tdma_scheduler->active_item = NULL;
-        // It is not a bug, just return success
+
+        /*
+        // TODO this would be nice, but the phy is currently the only way to queue messages
+        // Clear the packet queue for this slots and notify that the remaining messages has been canceled
+        if ((res = clearAndNotifyPacketQueueInSlot(inst, tdma_scheduler, slot)) != STATIC_QUEUE_SUCCESS) {
+            return res;
+        }
+        */
+
+        // This is not a bug push the packet to the next send slot
         return PHY_RADIO_SUCCESS;
     }
 
@@ -502,8 +497,9 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
 }
 
 static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t* hal_packet, halRadioErr_t result) {
-    phyRadio_t * inst = CONTAINER_OF(interface, phyRadio_t, hal_interface);
+    phyRadio_t   *inst = CONTAINER_OF(interface, phyRadio_t, hal_interface);
     phyRadioErr_t send_result = PHY_RADIO_SUCCESS;
+    int32_t       cb_res = PHY_RADIO_CB_SUCCESS;
 
     // Manage the halRadio result
     switch (result) {
@@ -511,6 +507,30 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
             // Manage this specific error
             send_result = PHY_RADIO_SEND_FAIL;
             break;
+        case HAL_RADIO_SEND_INTERRUPTED:
+            // Manage interrupted transmission, most likely triggered by an inappropriate send and then go to RX by phy
+            send_result = PHY_RADIO_SEND_FAIL;
+
+            // Check if we have any active packet in flight, inform higher layer that it has not been sent
+            if (inst->tdma_scheduler.in_flight && (inst->tdma_scheduler.active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC)) {
+                cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, send_result);
+            } else {
+                // This would be the sync packet. And it should be fine.
+                LOG("Sent but no packet!??\n");
+                // This is probably Ok!
+                //return PHY_RADIO_GEN_ERROR;
+            }
+
+            inst->tdma_scheduler.in_flight   = false;
+            inst->tdma_scheduler.active_item = NULL;
+
+            // Ok lets give up, we have failed
+            if (cb_res != PHY_RADIO_SUCCESS) {
+                return cb_res;
+            }
+
+            // Error managed, nothing more to do return
+            return HAL_RADIO_CB_SUCCESS;
         default:
             // Just forwade the error
             send_result = result;
@@ -518,7 +538,6 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
     }
 
     // Check if we have any active packet in flight, inform higher layer that it has been sent
-    int32_t cb_res = PHY_RADIO_CB_SUCCESS;
     if (inst->tdma_scheduler.in_flight && (inst->tdma_scheduler.active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC)) {
         cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, send_result);
     }
@@ -618,7 +637,7 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
             tdma_scheduler->float_slot_duration += control;
             tdma_scheduler->slot_duration = (int32_t)tdma_scheduler->float_slot_duration;
 
-            int32_t res = phyRadioTimerUpdateRepeatingTimer(&inst->radio_timer, inst->tdma_scheduler.float_slot_duration);
+            int32_t res = phyRadioTimerUpdateCombinedTimer(&inst->radio_timer, inst->tdma_scheduler.float_slot_duration);
             if (res != PHY_RADIO_TIMER_SUCCESS) {
                 LOG_TIMER_ERROR("Timer error %i\n", 6);
                 return res;
@@ -644,7 +663,7 @@ static int32_t syncWithCentral(phyRadio_t *inst, uint64_t toa, uint16_t sync_tim
         // Set the next prepare to trigger 1ms before the slot timer
         next_slot_start -= PHY_RADIO_GUARD_TIME_US;
 
-        res = phyRadioTimerStartPrepareTimer(&inst->radio_timer, prepare_alarm_callback, next_slot_start);
+        res = phyRadioTimerStartSinglePrepareTimer(&inst->radio_timer, prepare_alarm_callback, next_slot_start);
         if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 10);
             return res;
@@ -749,7 +768,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
                     } break;
                     default:
-                        LOG("PHY CB Error %i!\n", cb_res);
+                        LOG("PHY CB Error 1 %i!\n", cb_res);
                         return cb_res;
                 }
             }
@@ -804,7 +823,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
                     } break;
                     default:
-                        LOG("PHY CB Error %i!\n", cb_res);
+                        LOG("PHY CB Error 2 %i!\n", cb_res);
                         return cb_res;
                 }
 
@@ -870,7 +889,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
                     } break;
                     default:
-                        LOG("PHY CB Error %i!\n", cb_res);
+                        LOG("PHY CB Error 3 %i!\n", cb_res);
                         return cb_res;
                 }
 
@@ -883,7 +902,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
             int32_t cb_res = inst->interface->packet_cb(inst->interface, &new_packet);
             // If the callback returns bad values stop and return errors
             if (cb_res != PHY_RADIO_CB_SUCCESS) {
-                LOG("PHY CB Error %i!\n", cb_res);
+                LOG("PHY CB Error 4 %i!\n", cb_res);
                 return cb_res;
             }
             // Notify that the radio should stay in RX mode
@@ -979,6 +998,32 @@ static int32_t queueClearSlot(phyRadioTdma_t* scheduler,
     return staticQueueClear(&scheduler->slot[slot].static_queue);
 }
 
+static int32_t clearAndNotifyPacketQueueInSlot(phyRadio_t *inst, phyRadioTdma_t *scheduler, uint8_t slot) {
+    if (slot >= PHY_RADIO_NUM_SLOTS) {
+        return PHY_RADIO_INVALID_SLOT;
+    }
+
+    int32_t res = PHY_RADIO_SUCCESS;
+    phyRadioPacket_t* phy_packet = NULL;
+    while(!staticQueueEmpty(&scheduler->slot[slot].static_queue)) {
+        if ((res = queuePopFromSlot(scheduler, slot, &phy_packet)) != STATIC_QUEUE_SUCCESS) {
+            if (res == STATIC_QUEUE_EMPTY) {
+                break;
+            }
+            return PHY_RADIO_QUEUE_ERROR;
+        }
+
+        // Notify that the packet failed
+        if (phy_packet->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
+            if ((res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+                return res;
+            }
+        }
+    }
+
+    return PHY_RADIO_SUCCESS;
+}
+
 static int32_t clearAndNotifyPacketQueue(phyRadio_t *inst, phyRadioTdma_t *scheduler) {
     int32_t res = PHY_RADIO_SUCCESS;
 
@@ -989,14 +1034,14 @@ static int32_t clearAndNotifyPacketQueue(phyRadio_t *inst, phyRadioTdma_t *sched
             if ((res = inst->interface->sent_cb(inst->interface, scheduler->active_item, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
                 return res;
             }
-            scheduler->in_flight = false;
         }
     }
+
+    scheduler->in_flight = false;
     scheduler->active_item = NULL;
 
     // Clear the queue of any active messages
     for (uint8_t slot = 0; slot < PHY_RADIO_NUM_SLOTS; slot++) {
-
         phyRadioPacket_t* phy_packet = NULL;
         while(!staticQueueEmpty(&scheduler->slot[slot].static_queue)) {
             if ((res = queuePopFromSlot(scheduler, slot, &phy_packet)) != STATIC_QUEUE_SUCCESS) {
@@ -1015,7 +1060,7 @@ static int32_t clearAndNotifyPacketQueue(phyRadio_t *inst, phyRadioTdma_t *sched
         }
     }
 
-    return res;
+    return PHY_RADIO_SUCCESS;
 }
 
 static int32_t initTdmaScheduler(phyRadioTdma_t *inst) {
@@ -1214,7 +1259,7 @@ static int32_t processPeripheral(phyRadio_t *inst) {
             case PHY_RADIO_CB_SUCCESS:
                 break;
             default:
-                LOG("PHY CB Error %i!\n", cb_res);
+                LOG("PHY CB Error 5 %i!\n", cb_res);
                 return cb_res;
         }
 
@@ -1485,7 +1530,7 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     }
 
     // Start broadcasting a sync message to enable other units to adjust their clocks
-    res = phyRadioTimerStartRepeatingTimer(&inst->radio_timer, repeating_timer_callback, PHY_RADIO_SLOT_TIME_US);
+    res = phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, PHY_RADIO_SLOT_TIME_US, PHY_RADIO_GUARD_TIME_US);
     if (res != PHY_RADIO_TIMER_SUCCESS) {
         LOG_TIMER_ERROR("Timer error %i\n", 15);
         return res;
@@ -1612,4 +1657,13 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
     }
 
     return PHY_RADIO_SUCCESS;
+}
+
+int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot) {
+    if (inst == NULL) {
+        return PHY_RADIO_NULL_ERROR;
+    }
+
+    // Clear the slot and inform higher layers that the packets are lost
+    return clearAndNotifyPacketQueueInSlot(inst, &inst->tdma_scheduler, slot);
 }

@@ -32,6 +32,7 @@ typedef enum {
     PHY_RADIO_TIMER_HAL_ERROR         = -21003,
     PHY_RADIO_TIMER_DOUBLE_INIT_ERROR = -21004,
     PHY_RADIO_TIMER_ACTIVE_ERROR      = -21005,
+    PHY_RADIO_TIMER_NOT_ACTIVE_ERROR  = -21006,
 } phyRadioTimerErr_t;
 
 typedef struct phyRadioTimer phyRadioTimer_t;
@@ -113,7 +114,7 @@ int32_t phyRadioTimerCancelTaskTimer(phyRadioTimer_t *inst);
  * Input: Timeout time in micro seconds
  * Returns: phyRadioTimerErr_t
  */
-int32_t phyRadioTimerStartPrepareTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us);
+int32_t phyRadioTimerStartSinglePrepareTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us);
 
 /**
  * Cancel an ongoing prepare timer
@@ -150,4 +151,46 @@ int32_t phyRadioTimerStopRepeatingTimer(phyRadioTimer_t *inst);
  */
 int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, float new_period_us);
 
+/**
+ * Get time until next repeating timer
+ * Input: phyRadioTimer instance
+ * Input: Time until next fire
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioRepeatingTimerGetTimeToNext(phyRadioTimer_t *inst, uint32_t *period_us);
+
+/**
+ * Get time until next prepare timer
+ * Input: phyRadioTimer instance
+ * Input: Time until next fire
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioPrepareTimerGetTimeToNext(phyRadioTimer_t *inst, uint32_t *period_us);
+
+/**
+ * Start both a repeating timer and a prepare timer that lauches guard period before repeating timer
+ * Input: phyRadioTimer instance
+ * Input: Callback to be called on repeating timer
+ * Input: Callback to be called on prep timer
+ * Input: Shared timer period
+ * Input: Guard period between timers
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t rep_cb, phyRadioTimerCb_t prep_cb, uint32_t period_us, uint32_t guard_period);
+
+/**
+ * Update the period synchronously on both repeating timers keeping the guard period
+ * Input: phyRadioTimer instance
+ * Input: New Period time in micro seconds
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerUpdateCombinedTimer(phyRadioTimer_t *inst, float new_period_us);
+
+/**
+ * Stop both repeating timers
+ * Input: phyRadioTimer instance
+ * Input: New Period time in micro seconds
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerStopCombinedTimer(phyRadioTimer_t *inst);
 #endif /* PHY_RADIO_TIMER_H */
