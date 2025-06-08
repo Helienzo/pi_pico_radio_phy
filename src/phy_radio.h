@@ -22,6 +22,10 @@
 
 #ifndef PHY_RADIO_H
 #define PHY_RADIO_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "hal_radio.h"
 #include "static_queue.h"
 #include "c_buffer.h"
@@ -57,7 +61,7 @@
 #endif /* PHY_RADIO_NUM_SLOTS */
 
 #ifndef PHY_RADIO_NUM_ITEMS_SLOTS
-#define PHY_RADIO_NUM_ITEMS_SLOTS (3)
+#define PHY_RADIO_NUM_ITEMS_SLOTS (4)
 #endif /* PHY_RADIO_NUM_ITEMS_SLOTS */
 
 #ifndef PHY_RADIO_SUPERFRAME_LEN
@@ -110,7 +114,7 @@
 
 // Radio configuration
 #ifndef PHY_RADIO_DEFAULT_CHANNEL
-#define PHY_RADIO_DEFAULT_CHANNEL (868)
+#define PHY_RADIO_DEFAULT_CHANNEL (868000000)
 #endif /* PHY_RADIO_DEFAULT_CHANNEL */
 
 #ifndef PHY_RADIO_BIT_RATE
@@ -397,4 +401,15 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
  */
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
 
+/**
+ * Clear all messages from a slot
+ * Input: phyRadio instance
+ * Input: Slot to clear
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot);
+
+#ifdef __cplusplus
+}
+#endif
 #endif /* PHY_RADIO_H */
