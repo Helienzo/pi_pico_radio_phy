@@ -45,14 +45,6 @@ extern "C" {
 #define PHY_RADIO_MAX_PACKET_SIZE     (HAL_RADIO_MAX_PACKET_SIZE - PHY_RADIO_OVERHEAD_SIZE)
 #define PHY_RADIO_TOTAL_OVERHEAD_SIZE (PHY_RADIO_OVERHEAD_SIZE + HAL_RADIO_PACKET_OVERHEAD)
 
-/* NOTE: The minimum bitrate supported is ~15kbps, due to the maximum representable
- * latency in us is 8191. Bitrates lower than this risk overshooting.
-*/
-// Sync message and time synchronization
-#define PHY_RADIO_TX_TIME_SIZE            (1)
-#define PHY_RADIO_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_TX_TIME_SIZE)
-#define PHY_RADIO_SYNC_MSG_MAX_TIME       (8191) // 2^13 - 1
-
 // TDMA parameters
 #ifndef PHY_RADIO_NUM_SLOTS
 #define PHY_RADIO_NUM_SLOTS (2)
@@ -61,10 +53,6 @@ extern "C" {
 #ifndef PHY_RADIO_NUM_ITEMS_SLOTS
 #define PHY_RADIO_NUM_ITEMS_SLOTS (4)
 #endif /* PHY_RADIO_NUM_ITEMS_SLOTS */
-
-#ifndef PHY_RADIO_SUPERFRAME_LEN
-#define PHY_RADIO_SUPERFRAME_LEN (20)
-#endif /* PHY_RADIO_SUPERFRAME_LEN */
 
 #ifndef PHY_RADIO_SYNC_TIMEOUT
 #define PHY_RADIO_SYNC_TIMEOUT (3)
@@ -131,7 +119,6 @@ typedef enum {
     PHY_RADIO_INVALID_SLOT  = -20012,
     PHY_RADIO_TDMA_ERROR    = -20013,
     PHY_RADIO_QUEUE_ERROR   = -20014,
-    PHY_RADIO_SLOT_OVERFLOW = -20015,
 } phyRadioErr_t;
 
 typedef enum {
@@ -248,7 +235,6 @@ typedef struct {
     uint8_t            current_slot;
     phyRadioPacket_t   *active_item;
     bool               in_flight;
-    uint64_t           pkt_sent_time;
     uint32_t           scan_timeout_ms;
     uint16_t           packet_delay_time_us; // The time it will take for the receiver to read and decode this packet
 

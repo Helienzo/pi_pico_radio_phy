@@ -36,6 +36,13 @@ extern "C" {
 #define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
 #endif
 
+/* NOTE: The minimum bitrate supported is ~15kbps, due to the maximum representable
+ * latency in us is 8191. Bitrates lower than this risk overshooting.
+*/
+
+// Sync message and time synchronization
+#define PHY_RADIO_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_TX_TIME_SIZE)
+#define PHY_RADIO_SYNC_MSG_MAX_TIME       (8191) // 2^13 - 1
 #define PHY_RADIO_SYNC_MSG_TIME_MASK      (0x1FFF)
 #define PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT (8)
 #define PHY_RADIO_SYNC_MSG_TIME_MSB_MASK  (0x1F)
@@ -57,6 +64,7 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_SUCCESS          = 0,
     PHY_RADIO_FRAME_SYNC_NULL_ERROR       = -22001,
     PHY_RADIO_FRAME_SYNC_GEN_ERROR        = -22002,
+    PHY_RADIO_FRAME_SYNC_FRAME_OVERFLOW   = -22015,
 } phyRadioFrameSyncErr_t;
 
 // Sync message and time synchronization
@@ -69,6 +77,7 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_MODE_IDLE       = 0,
     PHY_RADIO_FRAME_SYNC_MODE_CENTRAL,   = 1,
     PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL = 2,
+    PHY_RADIO_FRAME_SYNC_MODE_SCAN       = 3,
 } phyRadioFrameSyncMode_t;
 
 typedef enum {
@@ -114,6 +123,9 @@ typedef struct {
     // The actuall time it takes to send a sync message
     uint16_t central_sync_msg_time;
 
+    // The time it took for another central to send it's sync message
+    uint64_t pkt_sent_time;
+
     // The estimated length of the centrals superslot time
     // Due to slight clock drift it might differ from ours
     uint64_t frame_start_time;
@@ -143,7 +155,8 @@ int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_
 /**
  * Queue the next sync packet
  */
-int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst);
+
+int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket_t **sync_packet);
 
 /**
  * Send the next sync packet
@@ -153,14 +166,22 @@ int32_t phyRadioFrameSyncSendNextSync(phyRadioFrameSync_t *inst);
 /**
  * Notify that the sync packet has been sent
  */
-int32_t phyRadioFrameSyncNotifySyncSent(phyRadioFrameSync_t *inst);
+
+int32_t phyRadioFrameSyncNotifySyncSent(phyRadioFrameSync_t *inst, halRadioPackage_t* hal_packet);
 
 /**
  * This function is used to manage current state of the frame sync module
  */
-int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst);
-
+int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMode_t mode);
  
+/**
+ * Check time remaining in frame
+ */
+int32_t phyRadioFrameSyncTimeLeftInFrame(phyRadioFrameSync_t *inst);
+
+/**
+ * Process function call
+ */
 int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst);
 
 //int32_t phyRadioFrameSync(phyRadioFrameSync_t *inst)

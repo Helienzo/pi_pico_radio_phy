@@ -43,6 +43,15 @@
 #define UNUSED(x) (void)(x)
 #endif
 
+/**
+ *  TODO's
+ *   - The timer instance management will not work, two modules cannot own it, and container of does not work on pointers
+ *   - Verify the num_of_slots * slot duration, this is module should keep track of full frames or some kind of subframe, unclear so far ..
+ *   - Obviously check the functionality
+ *   - Check how we start the different modes, central and peripheral ..
+ *   - How do we go from scan to peripheral ?
+ */
+
 static int32_t sync_timer_alarm_callback(phyRadioTimer_t *interface);
 static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t sync_time);
 static int32_t prepare_alarm_callback(phyRadioTimer_t *interface);
@@ -66,7 +75,7 @@ static int32_t prepare_alarm_callback(phyRadioTimer_t *interface) {
 }
 
 // This timer triggers on the start of each new frame
-int32_t repeating_timer_callback(phyRadioTimer_t *interface) {
+static int32_t repeating_timer_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
     phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
 
@@ -175,10 +184,73 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
+int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket_t **sync_packet) {
+
+    // Queue package in hal layer
+    cBufferClear(inst->sync_packet.pkt_buffer); // This is safe, lets not check retvals
+
+    // Create the SYNC packet header
+    uint8_t packet_header[2];
+    uint8_t phy_pkt_type = PHY_RADIO_PKT_INTERNAL_SYNC << PHY_RADIO_PACKET_TYPE_SHIFT;
+    packet_header[0] = (uint8_t)(inst->tdma_scheduler.central_sync_msg_time & PHY_RADIO_SYNC_MSG_TIME_LSB_MASK); // WRITE LSB
+    packet_header[1] = phy_pkt_type | (uint8_t)((inst->tdma_scheduler.central_sync_msg_time >> PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT) &
+                                                    PHY_RADIO_SYNC_MSG_TIME_MSB_MASK); // Write MSB
+
+    // Add the phy and sync packet header
+    cBufferPrependByte(inst->sync_packet.pkt_buffer, packet_header[0]); // This is safe, lets not check retvals
+    cBufferPrependByte(inst->sync_packet.pkt_buffer, packet_header[1]); // This is safe, lets not check retvals
+    cBufferPrependByte(inst->sync_packet.pkt_buffer, inst->my_address); // This is safe, lets not check retvals
+
+    // Set the sync packet as active packet
+    inst->hal_interface.pkt_buffer = inst->sync_packet.pkt_buffer;
+
+    int32_t res = halRadioQueuePackage(&inst->hal_radio_inst,
+                                        &inst->hal_interface,
+                                        inst->sync_packet.addr);
+
+    // Give the caller access to this packet
+    *sync_packet = &inst->sync_packet;
+
+    // Should we check the result here or just pass it?
+    // Could be usefull if we want to know specifically that it was the sync that failed
+    return res;
+}
+
+int32_t phyRadioFrameSyncSendNextSync(phyRadioFrameSync_t *inst) {
+
+    // Store the absolute time when this packet tx started
+    inst->pkt_sent_time = time_us_64();
+
+    // Trigger send of a queued packet
+    int32_t res = halRadioQueueSend(&inst->hal_radio_inst, false);
+
+    // Should we check the result here or just pass it?
+    // Could be usefull if we want to know specifically that it was the sync that failed
+    return res;
+}
+
+int32_t phyRadioFrameSyncNotifySyncSent(phyRadioFrameSync_t *inst, halRadioPackage_t* hal_packet) {
+    inst->tdma_scheduler.pkt_sent_time = hal_packet->time - inst->tdma_scheduler.pkt_sent_time;
+    // If this calculation was correct the send time should never be more than 2ms
+    // This protects from errounous behaviour, could perhaps be removed
+    if (inst->pkt_sent_time < PHY_RADIO_SYNC_MSG_MAX_TIME) {
+        inst->central_sync_msg_time = (uint16_t)inst->pkt_sent_time;
+    }
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
 int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_msb, phyRadioPacket_t *phy_packet, halRadioPackage_t* hal_packet) {
 
+    int32_t bytes_in_packets = cBufferAvailableForRead(phy_packet->pkt_buffer);
+
+    // Double check that the length of the packet is correct
+    if (bytes_in_packets < PHY_RADIO_SYNC_MSG_SIZE) {
+        return HAL_RADIO_CB_DO_NOTHING;
+    }
+
     // Parse the sync message time
-    uint16_t sync_msg_time = cBufferReadByte(interface->pkt_buffer);
+    uint16_t sync_msg_time = cBufferReadByte(phy_packet->pkt_buffer);
     phy_header_msb <<= PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT;
     sync_msg_time |= phy_header_msb;
     sync_msg_time &= PHY_RADIO_SYNC_MSG_TIME_MASK; // Mask out the relevant bits
@@ -216,6 +288,38 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
+int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMode_t mode) {
+
+    switch (mode) {
+        case PHY_RADIO_FRAME_SYNC_MODE_IDLE:
+            break;
+        case PHY_RADIO_FRAME_SYNC_MODE_CENTRAL:
+            break;
+        case PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL:
+            break;
+        case PHY_RADIO_FRAME_SYNC_MODE_SCAN:
+                inst->frame_duration = PHY_RADIO_SLOT_TIME_US;
+                inst->float_frame_duration = (float)PHY_RADIO_SLOT_TIME_US;
+
+                // Cancel any active timers
+                return phyRadioTimerCancelAll(&inst->radio_timer);
+            break;
+        default:
+            break;
+    }
+}
+
+int32_t phyRadioFrameSyncTimeLeftInFrame(phyRadioFrameSync_t *inst) {
+    // Compute how long we have been in this slot, and check that we have not overflowed
+    uint64_t time_in_slot = time_us_64() - tdma_scheduler->slot_start_time;
+
+    if (time_in_slot > inst->frame_duration - PHY_RADIO_GUARD_TIME_US) {
+        return PHY_RADIO_FRAME_SYNC_FRAME_OVERFLOW;
+    }
+
+    return inst->frame_duration - time_in_slot - PHY_RADIO_GUARD_TIME_US;
+}
+
 int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSyncInit_t *init_struct) {
     if (inst == NULL) {
         return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
@@ -246,6 +350,21 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     inst->sync_packet.addr = PHY_RADIO_BROADCAST_ADDR;
     inst->sync_packet.slot = 0;
     
+    // Reset all time keepers
+    inst->pkt_sent_time         = 0;
+    inst->central_sync_msg_time = 0;
+    inst->frame_start_time       = 0;
+    inst->frame_duration         = PHY_RADIO_SLOT_TIME_US;
+    inst->float_frame_duration   = (float)PHY_RADIO_SLOT_TIME_US;
+
+    inst->error_prev = 0.0f;
+    inst->integral = 0.0f;
+
+    inst->inverse_of_num_slots = 1.0/((float)PHY_RADIO_SUPERFRAME_LEN);
+
+    // Calculate a best effort sync message time estimate to initialize this value
+    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, hal_config.bitrate, PHY_RADIO_SYNC_MSG_SIZE);
+
     // Initialize timer (owned by this module)
     int32_t timer_result = phyRadioTimerInit(&inst->radio_timer);
     if (timer_result != PHY_RADIO_TIMER_SUCCESS) {
