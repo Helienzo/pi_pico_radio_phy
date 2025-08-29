@@ -1,0 +1,171 @@
+/**
+ * @file:       phy_radio_frame_sync.h
+ * @author:     Lucas Wennerholm <lucas.wennerholm@gmail.com>
+ * @brief:      Header file for PHY radio frame synchronization layer
+ *
+ * @license: Apache 2.0
+ *
+ * Copyright 2025 Lucas Wennerholm
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#ifndef PHY_RADIO_FRAME_SYNC_H
+#define PHY_RADIO_FRAME_SYNC_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "hal_radio.h"
+#include "c_buffer.h"
+#include "phy_radio_timer.h"
+#include "phy_radio_common.h"
+
+#ifndef CONTAINER_OF
+#define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
+#endif
+
+#define PHY_RADIO_SYNC_MSG_TIME_MASK      (0x1FFF)
+#define PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT (8)
+#define PHY_RADIO_SYNC_MSG_TIME_MSB_MASK  (0x1F)
+#define PHY_RADIO_SYNC_MSG_TIME_LSB_MASK  (0xFF)
+
+#ifndef PHY_RADIO_PID_KP
+#define PHY_RADIO_PID_KP 0.006f
+#endif /* PHY_RADIO_PID_KP */
+
+#ifndef PHY_RADIO_PID_KI
+#define PHY_RADIO_PID_KI 0.00001f
+#endif /* PHY_RADIO_PID_KI */
+
+#ifndef PHY_RADIO_PID_KD
+#define PHY_RADIO_PID_KD 0.06f
+#endif /* PHY_RADIO_PID_KD */
+
+typedef enum {
+    PHY_RADIO_FRAME_SYNC_SUCCESS          = 0,
+    PHY_RADIO_FRAME_SYNC_NULL_ERROR       = -22001,
+    PHY_RADIO_FRAME_SYNC_GEN_ERROR        = -22002,
+} phyRadioFrameSyncErr_t;
+
+// Sync message and time synchronization
+#define PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE            (1)
+#define PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE           (PHY_RADIO_FRAME_SYNC_SENDER_ADDR_SIZE + PHY_RADIO_FRAME_SYNC_PKT_TYPE_SIZE + PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE)
+
+typedef enum {
+    PHY_RADIO_FRAME_SYNC_MODE_TIMER_ERROR           = -20092,
+    PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR             = -20091,
+    PHY_RADIO_FRAME_SYNC_MODE_IDLE       = 0,
+    PHY_RADIO_FRAME_SYNC_MODE_CENTRAL,   = 1,
+    PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL = 2,
+} phyRadioFrameSyncMode_t;
+
+typedef enum {
+    PHY_RADIO_FRAME_SYNC_INT_IDLE = 0,
+    PHY_RADIO_FRAME_SYNC_INT_PREPARE,
+    PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME,
+} phyRadioInterruptEvent_t;
+
+/**
+ * Initialization structure for frame sync module
+ */
+typedef struct {
+    halRadio_t          *hal_radio_inst;
+    halRadioInterface_t *hal_interface;
+    uint8_t             my_address;
+} phyRadioFrameSyncInit_t;
+
+/**
+ * Main data type for this module
+ */
+typedef struct {
+    // Top level instance
+    phyRadio_t *phy_radio_inst;
+
+    // HalRadio
+    halRadio_t          *hal_radio_inst;
+    halRadioInterface_t *hal_interface;
+    
+    // Internal device address
+    uint8_t                 my_address;
+    phyRadioFrameSyncMode_t mode;
+    
+    // Sync message and buffers
+    uint8_t             sync_message_array[PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE + C_BUFFER_ARRAY_OVERHEAD + HAL_RADIO_PACKET_OVERHEAD];
+    cBuffer_t           sync_message_buf;
+    phyRadioPacket_t    sync_packet;
+    
+    // Timer management
+    phyRadioTimer_t     radio_timer;
+    volatile uint8_t    timer_interrupt;
+
+    // Frame sync management
+    // The actuall time it takes to send a sync message
+    uint16_t central_sync_msg_time;
+
+    // The estimated length of the centrals superslot time
+    // Due to slight clock drift it might differ from ours
+    uint64_t frame_start_time;
+    uint64_t frame_duration;
+    float    float_frame_duration;
+
+    // PID gains & state
+    float   error_prev;
+    float   integral;
+
+    float    inverse_of_num_slots;
+} phyRadioFrameSync_t;
+
+/**
+ * Initialize the frame sync module
+ * Input: phyRadioFrameSync instance
+ * Input: Initialization structure with required pointers
+ * Returns: phyRadioFrameSyncErr_t
+ */
+int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSyncInit_t *init_struct);
+
+/**
+ * This function should be triggered on each new incomming sync packet
+ */
+int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_msb, phyRadioPacket_t *phy_packet, halRadioPackage_t* hal_packet);
+
+/**
+ * Queue the next sync packet
+ */
+int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst);
+
+/**
+ * Send the next sync packet
+ */
+int32_t phyRadioFrameSyncSendNextSync(phyRadioFrameSync_t *inst);
+
+/**
+ * Notify that the sync packet has been sent
+ */
+int32_t phyRadioFrameSyncNotifySyncSent(phyRadioFrameSync_t *inst);
+
+/**
+ * This function is used to manage current state of the frame sync module
+ */
+int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst);
+
+ 
+int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst);
+
+//int32_t phyRadioFrameSync(phyRadioFrameSync_t *inst)
+
+#ifdef __cplusplus
+}
+#endif
+#endif /* PHY_RADIO_FRAME_SYNC_H */
