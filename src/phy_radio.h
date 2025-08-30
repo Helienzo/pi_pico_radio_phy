@@ -37,14 +37,6 @@ extern "C" {
 #define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
 #endif
 
-// Packet sizes
-#define PHY_RADIO_SENDER_ADDR_SIZE    (1)
-#define PHY_RADIO_PKT_TYPE_SIZE       (1)
-#define PHY_RADIO_OVERHEAD_SIZE       (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE)
-#define PHY_RADIO_RX_BUFFER_SIZE      (HAL_RADIO_MAX_BUFFER_SIZE + C_BUFFER_ARRAY_OVERHEAD)
-#define PHY_RADIO_MAX_PACKET_SIZE     (HAL_RADIO_MAX_PACKET_SIZE - PHY_RADIO_OVERHEAD_SIZE)
-#define PHY_RADIO_TOTAL_OVERHEAD_SIZE (PHY_RADIO_OVERHEAD_SIZE + HAL_RADIO_PACKET_OVERHEAD)
-
 // TDMA parameters
 #ifndef PHY_RADIO_NUM_SLOTS
 #define PHY_RADIO_NUM_SLOTS (2)
@@ -137,9 +129,6 @@ typedef enum {
     PHY_RADIO_SLOT_TX,
 } phyRadioSlotType_t;
 
-#define PHY_RADIO_PACKET_TYPE_MASK  0xE0
-#define PHY_RADIO_PACKET_TYPE_SHIFT 5
-
 typedef enum {
     PHY_RADIO_CB_SET_SCAN       = 2,
     PHY_RADIO_CB_SET_PERIPHERAL = 1, // Notify that the callback completed successfully
@@ -222,6 +211,11 @@ typedef struct {
 
 // Complete scheduler structure
 typedef struct {
+    uint8_t              my_address;
+    halRadio_t          *hal_radio_inst;
+    halRadioInterface_t *hal_interface;
+    phyRadio_t          *phy_radio_inst;
+
     // Each slot can hold a number of packets
     struct {
         // Slot items and queue
@@ -241,6 +235,7 @@ typedef struct {
     // Superframe management
     uint32_t superslot_counter; // Keeping track of number of slots in a superframe
     uint32_t sync_counter;      // Keeping track of frames since last sync
+    uint32_t hal_bitrate;
 
     // Module responsible for syncronizing internal timers
     phyRadioFrameSync_t frame_sync;
@@ -253,6 +248,15 @@ struct phyRadioSyncState {
     phyRadioMode_t mode;            // The current phy radio mode
     uint8_t        central_address; // The address to the central device
 };
+
+typedef struct {
+    phyRadio_t          *phy_radio_inst;
+    halRadio_t          *hal_radio_inst;
+    halRadioInterface_t *hal_interface;
+    uint8_t              my_address;
+    uint8_t              hal_bitrate;
+} phyRadioTdmaInit_t;
+
 
 /**
  * The main data type for this module
@@ -272,8 +276,8 @@ struct phyRadio {
     halRadioInterface_t hal_interface;
 
     // Timer management
-    phyRadioTimer_t  radio_timer;
-    volatile uint8_t timer_interrupt;
+    phyRadioTaskTimer_t  task_timer;
+    volatile uint8_t     timer_interrupt;
 
     // Phy TDMA Scheduler
     phyRadioTdma_t     tdma_scheduler;

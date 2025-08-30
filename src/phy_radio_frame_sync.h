@@ -41,7 +41,6 @@ extern "C" {
 */
 
 // Sync message and time synchronization
-#define PHY_RADIO_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_TX_TIME_SIZE)
 #define PHY_RADIO_SYNC_MSG_MAX_TIME       (8191) // 2^13 - 1
 #define PHY_RADIO_SYNC_MSG_TIME_MASK      (0x1FFF)
 #define PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT (8)
@@ -69,30 +68,32 @@ typedef enum {
 
 // Sync message and time synchronization
 #define PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE            (1)
-#define PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE           (PHY_RADIO_FRAME_SYNC_SENDER_ADDR_SIZE + PHY_RADIO_FRAME_SYNC_PKT_TYPE_SIZE + PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE)
+#define PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE)
 
 typedef enum {
-    PHY_RADIO_FRAME_SYNC_MODE_TIMER_ERROR           = -20092,
-    PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR             = -20091,
-    PHY_RADIO_FRAME_SYNC_MODE_IDLE       = 0,
-    PHY_RADIO_FRAME_SYNC_MODE_CENTRAL,   = 1,
-    PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL = 2,
-    PHY_RADIO_FRAME_SYNC_MODE_SCAN       = 3,
+    PHY_RADIO_FRAME_SYNC_MODE_TIMER_ERROR = -20092,
+    PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR   = -20091,
+    PHY_RADIO_FRAME_SYNC_MODE_IDLE        = 0,
+    PHY_RADIO_FRAME_SYNC_MODE_CENTRAL     = 1,
+    PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL  = 2,
+    PHY_RADIO_FRAME_SYNC_MODE_SCAN        = 3,
 } phyRadioFrameSyncMode_t;
 
 typedef enum {
     PHY_RADIO_FRAME_SYNC_INT_IDLE = 0,
     PHY_RADIO_FRAME_SYNC_INT_PREPARE,
     PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME,
-} phyRadioInterruptEvent_t;
+} phyRadioFrameSyncInterruptEvent_t;
 
 /**
  * Initialization structure for frame sync module
  */
 typedef struct {
+    phyRadio_t          *phy_radio_inst;
     halRadio_t          *hal_radio_inst;
     halRadioInterface_t *hal_interface;
-    uint8_t             my_address;
+    uint8_t              my_address;
+    uint8_t              hal_bitrate;
 } phyRadioFrameSyncInit_t;
 
 /**

@@ -36,9 +36,12 @@ typedef enum {
 } phyRadioTimerErr_t;
 
 typedef struct phyRadioTimer phyRadioTimer_t;
+typedef struct phyRadioTaskTimer phyRadioTaskTimer_t;
+
 typedef struct phyRadioTimerInternal phyRadioTimerInternal_t;
 
 typedef int32_t (*phyRadioTimerCb_t)(phyRadioTimer_t *inst);
+typedef int32_t (*phyRadioTaskTimerCb_t)(phyRadioTaskTimer_t *inst);
 
 struct phyRadioTimer {
     bool                     initialized;
@@ -48,6 +51,12 @@ struct phyRadioTimer {
     phyRadioTimerCb_t sync_cb;
     phyRadioTimerCb_t task_cb;
     phyRadioTimerCb_t repeating_cb;
+};
+
+struct phyRadioTaskTimer {
+    bool                  initialized;
+    alarm_id_t            task_alarm_id;    // Timer alarm used for time dependent tasks
+    phyRadioTaskTimerCb_t task_cb;
 };
 
 /**
@@ -88,24 +97,6 @@ int32_t phyRadioTimerStartSyncTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb,
  * Returns: phyRadioTimerErr_t
  */
 int32_t phyRadioTimerCancelSyncTimer(phyRadioTimer_t *inst);
-
-/**
- * Start a task timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerStartTaskTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us);
-
-/**
- * Cancel an ongoing task timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerCancelTaskTimer(phyRadioTimer_t *inst);
 
 /**
  * Start a prepare timer
@@ -193,4 +184,30 @@ int32_t phyRadioTimerUpdateCombinedTimer(phyRadioTimer_t *inst, float new_period
  * Returns: phyRadioTimerErr_t
  */
 int32_t phyRadioTimerStopCombinedTimer(phyRadioTimer_t *inst);
+
+/**
+ * Init a task timer instance
+ * Input: phyRadioTaskTimer instance
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTaskTimerInit(phyRadioTaskTimer_t *inst);
+
+/**
+ * Start a task timer
+ * Input: phyRadioTaskTimer instance
+ * Input: Callback to be called on timeout
+ * Input: Timeout time in micro seconds
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerStartTaskTimer(phyRadioTaskTimer_t *inst, phyRadioTaskTimerCb_t cb, uint32_t time_us);
+
+/**
+ * Cancel an ongoing task timer
+ * Input: phyRadioTaskTimer instance
+ * Input: Callback to be called on timeout
+ * Input: Timeout time in micro seconds
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerCancelTaskTimer(phyRadioTaskTimer_t *inst);
+
 #endif /* PHY_RADIO_TIMER_H */

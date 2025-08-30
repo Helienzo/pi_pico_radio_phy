@@ -44,7 +44,6 @@ struct phyRadioTimerInternal {
     float      clk_div;
     float      clk_converter;
     float      inv_clk_converter;
-    alarm_id_t task_alarm_id;    // Timer alarm used for time dependent tasks
     alarm_id_t sync_alarm_id;    // Timer alarm used for synchronization with Central
 
     bool       prepare_timer_active; // Timer alarm used to start the guard period
@@ -57,8 +56,8 @@ static phyRadioTimerInternal_t timer_data;
 
 static int64_t task_timer_alarm_callback(alarm_id_t id, void *user_data) {
     // Get the current phy radio instance
-    phyRadioTimer_t *inst =  (phyRadioTimer_t*)user_data;
-    inst->_private->task_alarm_id = 0;
+    phyRadioTaskTimer_t *inst =  (phyRadioTaskTimer_t*)user_data;
+    inst->task_alarm_id = 0;
 
     if (inst->task_cb != NULL) {
         inst->task_cb(inst);
@@ -114,6 +113,21 @@ static void repeating_timer_callback(void) {
     }
 }
 
+int32_t phyRadioTaskTimerInit(phyRadioTaskTimer_t *inst) {
+    if (inst == NULL) {
+        return PHY_RADIO_TIMER_NULL_ERROR;
+    }
+
+    if (inst->initialized) {
+        return PHY_RADIO_TIMER_DOUBLE_INIT_ERROR;
+    }
+
+    inst->initialized = true;
+    inst->task_cb       = NULL;
+    inst->task_alarm_id = 0;
+
+    return PHY_RADIO_TIMER_SUCCESS;
+}
 /**
  * Init the phy radio timer
  * Input: phyRadioTimer instance
@@ -132,7 +146,6 @@ int32_t phyRadioTimerInit(phyRadioTimer_t *inst) {
 
     inst->prepare_cb   = NULL;
     inst->sync_cb      = NULL;
-    inst->task_cb      = NULL;
     inst->repeating_cb = NULL;
     inst->_private     = &timer_data;
     timer_data.inst    = inst;
@@ -163,7 +176,6 @@ int32_t phyRadioTimerInit(phyRadioTimer_t *inst) {
 
     pwm_clear_irq(PHY_RADIO_PREP_TIMER_PWM_SLICE);
 
-    timer_data.task_alarm_id          = 0;    // Timer alarm used for time dependent tasks
     timer_data.sync_alarm_id          = 0;    // Timer alarm used for synchronization with Central
     timer_data.repeating_timer_active = false;
     timer_data.prepare_timer_active   = false;
@@ -204,14 +216,6 @@ int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst) {
         inst->sync_cb                 = NULL;
     }
 
-    if (inst->_private->task_alarm_id != 0) {
-        if (!cancel_alarm(inst->_private->task_alarm_id)) {
-            return PHY_RADIO_TIMER_HAL_ERROR;
-        }
-        inst->_private->task_alarm_id = 0;
-        inst->task_cb                 = NULL;
-    }
-
     return PHY_RADIO_TIMER_SUCCESS;
 }
 
@@ -243,11 +247,11 @@ int32_t phyRadioTimerCancelSyncTimer(phyRadioTimer_t *inst) {
     return PHY_RADIO_TIMER_SUCCESS;
 }
 
-int32_t phyRadioTimerStartTaskTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us) {
-    if (inst->_private->task_alarm_id == 0) {
+int32_t phyRadioTimerStartTaskTimer(phyRadioTaskTimer_t *inst, phyRadioTaskTimerCb_t cb, uint32_t time_us) {
+    if (inst->task_alarm_id == 0) {
         inst->task_cb = cb; // This must be set before adding the alarm as a timout might occure during the add
-        if ((inst->_private->task_alarm_id = add_alarm_in_us(time_us, task_timer_alarm_callback, inst, true)) < 0) {
-            inst->_private->task_alarm_id = 0;
+        if ((inst->task_alarm_id = add_alarm_in_us(time_us, task_timer_alarm_callback, inst, true)) < 0) {
+            inst->task_alarm_id = 0;
             inst->task_cb = NULL;
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
@@ -258,15 +262,15 @@ int32_t phyRadioTimerStartTaskTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb,
     return PHY_RADIO_TIMER_SUCCESS;
 }
 
-int32_t phyRadioTimerCancelTaskTimer(phyRadioTimer_t *inst) {
-    if (inst->_private->task_alarm_id != 0) {
-        if (!cancel_alarm(inst->_private->task_alarm_id)) {
+int32_t phyRadioTimerCancelTaskTimer(phyRadioTaskTimer_t *inst) {
+    if (inst->task_alarm_id != 0) {
+        if (!cancel_alarm(inst->task_alarm_id)) {
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
     }
 
-    inst->_private->task_alarm_id = 0;
-    inst->task_cb                 = NULL;
+    inst->task_alarm_id = 0;
+    inst->task_cb       = NULL;
 
     return PHY_RADIO_TIMER_SUCCESS;
 }
