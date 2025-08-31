@@ -295,7 +295,6 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
              inst->mode = mode;
             break;
         case PHY_RADIO_FRAME_SYNC_MODE_CENTRAL:
-             LOG_TIMER_ERROR("S\n");
              inst->mode = mode;
              return phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, PHY_RADIO_SLOT_TIME_US, PHY_RADIO_GUARD_TIME_US);
         case PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL:
