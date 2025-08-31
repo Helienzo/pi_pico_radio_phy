@@ -528,6 +528,12 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                 // Switch the phy to peripheral mode, to enable the higher layer to send messages
                 inst->sync_state.mode = PHY_RADIO_MODE_PERIPHERAL;
 
+                // Update frame sync state
+                res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL);
+                if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                    return res;
+                }
+
                 // Notify that a device has been found, TODO fix assignment
                 inst->sync_state.tx_slot_number  = PHY_RADIO_PERIPHERAL_TX_SLOT;
                 inst->sync_state.central_address = sender_address;
@@ -648,6 +654,11 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
 
                         // Set peripheral mode
                         inst->sync_state.mode = PHY_RADIO_MODE_PERIPHERAL;
+
+                        res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL);
+                        if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                            return res;
+                        }
                     } break;
                     case PHY_RADIO_CB_SET_SCAN: {
                         // Reset the sync state, TODO fix assignment
@@ -1330,6 +1341,11 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
     inst->tdma_scheduler.scan_timeout_ms = timeout_ms;
 
     inst->sync_state.mode = PHY_RADIO_MODE_SCAN;
+
+    res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_SCAN);
+    if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+        return res;
+    }
 
     // Reset all counters
     inst->tdma_scheduler.current_slot = 0;

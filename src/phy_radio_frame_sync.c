@@ -292,12 +292,17 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
 
     switch (mode) {
         case PHY_RADIO_FRAME_SYNC_MODE_IDLE:
+             inst->mode = mode;
             break;
         case PHY_RADIO_FRAME_SYNC_MODE_CENTRAL:
-            return phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, PHY_RADIO_SLOT_TIME_US, PHY_RADIO_GUARD_TIME_US);
+             LOG_TIMER_ERROR("S\n");
+             inst->mode = mode;
+             return phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, PHY_RADIO_SLOT_TIME_US, PHY_RADIO_GUARD_TIME_US);
         case PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL:
-            break;
+             inst->mode = mode;
+             break;
         case PHY_RADIO_FRAME_SYNC_MODE_SCAN:
+                inst->mode = mode;
                 inst->frame_duration = PHY_RADIO_SLOT_TIME_US;
                 inst->float_frame_duration = (float)PHY_RADIO_SLOT_TIME_US;
 
@@ -307,6 +312,8 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
         default:
             break;
     }
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
 int32_t phyRadioFrameSyncTimeLeftInFrame(phyRadioFrameSync_t *inst) {
@@ -339,8 +346,9 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     // Set the hal radio pointers and address
     inst->phy_radio_inst = init_struct->phy_radio_inst;
     inst->hal_radio_inst = init_struct->hal_radio_inst;
-    inst->hal_interface = init_struct->hal_interface;
-    inst->my_address = init_struct->my_address;
+    inst->hal_interface  = init_struct->hal_interface;
+    inst->my_address     = init_struct->my_address;
+    inst->mode           = PHY_RADIO_FRAME_SYNC_MODE_IDLE;
     
     // Initialize sync message buffer
     cBufferInit(&inst->sync_message_buf, inst->sync_message_array, sizeof(inst->sync_message_array));
