@@ -77,8 +77,8 @@ struct phyRadioPacket {
 
 typedef enum {
     FRAME_SYNC_START_EVENT,
-    FRAME_SYNC_PREPARE_EVENT,
     FRAME_SYNC_NEW_FRAME_EVENT,
+    FRAME_SYNC_GUARD_EVENT,
 } phyRadioFrameSyncEvent_t;
 
 int32_t phyRadioFrameSyncCallback(phyRadio_t *inst, phyRadioFrameSyncEvent_t event);

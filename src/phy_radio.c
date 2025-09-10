@@ -63,8 +63,8 @@ static int32_t scan_timer_alarm_callback(phyRadioTaskTimer_t *interface);
 static int32_t send_timer_alarm_callback(phyRadioTaskTimer_t *interface);
 static inline int32_t cancelAllTimers(phyRadio_t *inst);
 static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t* packet);
-static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst);
-static int32_t managePrepareTimerInterrupt(phyRadio_t *inst);
+static int32_t manageGuardTimerInterrupt(phyRadio_t *inst);
+static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst);
 static int32_t clearAndNotifyPacketQueueInSlot(phyRadio_t *inst, phyRadioTdma_t *scheduler, uint8_t slot);
 
 static int32_t send_timer_alarm_callback(phyRadioTaskTimer_t *interface) {
@@ -87,7 +87,7 @@ static int32_t scan_timer_alarm_callback(phyRadioTaskTimer_t *interface) {
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t managePrepareTimerInterrupt(phyRadio_t *inst) {
+static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst) {
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
 
     // Get the next slot
@@ -155,7 +155,7 @@ static int32_t managePrepareTimerInterrupt(phyRadio_t *inst) {
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t manageRepeatingTimerInterrupt(phyRadio_t *inst) {
+static int32_t manageGuardTimerInterrupt(phyRadio_t *inst) {
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
     // Check what slot we are currently in
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
@@ -1155,10 +1155,10 @@ int32_t phyRadioFrameSyncCallback(phyRadio_t *inst, phyRadioFrameSyncEvent_t eve
     {
         case FRAME_SYNC_START_EVENT:
             return manageStartSyncEvent(inst);
-        case FRAME_SYNC_PREPARE_EVENT:
-            return managePrepareTimerInterrupt(inst);
+        case FRAME_SYNC_GUARD_EVENT:
+            return manageGuardTimerInterrupt(inst);
         case FRAME_SYNC_NEW_FRAME_EVENT:
-            return manageRepeatingTimerInterrupt(inst);
+            return manageNewFrameTimerInterrupt(inst);
         default:
             break;
     }

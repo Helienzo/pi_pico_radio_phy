@@ -62,9 +62,9 @@ static int32_t new_frame_callback(phyRadioTimer_t *interface) {
     phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
-        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_PREPARE;
+        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
     } else {
-        int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_PREPARE_EVENT);
+        int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_NEW_FRAME_EVENT);
         if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
             inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
         }
@@ -85,12 +85,14 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface) {
     // It is safe to skip the retval check here
     phyRadioTimerStopTickTimer(&inst->radio_timer);
 
+    // TODO here we need to count and keep track of number of ticks
+
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
         // Set interrupt flag
         // If the radio is busy pass the task to the main context
-        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
+        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_GUARD;
     } else {
-        int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_NEW_FRAME_EVENT);
+        int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_GUARD_EVENT);
         if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
             inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
         }
@@ -246,9 +248,9 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
             int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_NEW_FRAME_EVENT);
             return res;
         } break;
-        case PHY_RADIO_FRAME_SYNC_INT_PREPARE: {
+        case PHY_RADIO_FRAME_SYNC_INT_GUARD: {
             inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
-            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_PREPARE_EVENT);
+            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_GUARD_EVENT);
             return res;
         } break;
         default:

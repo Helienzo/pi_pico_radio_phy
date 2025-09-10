@@ -81,7 +81,7 @@ typedef enum {
 
 typedef enum {
     PHY_RADIO_FRAME_SYNC_INT_IDLE = 0,
-    PHY_RADIO_FRAME_SYNC_INT_PREPARE,
+    PHY_RADIO_FRAME_SYNC_INT_GUARD,
     PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME,
 } phyRadioFrameSyncInterruptEvent_t;
 
