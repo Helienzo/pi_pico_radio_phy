@@ -1407,6 +1407,8 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst) {
 
     inst->sync_state.mode = PHY_RADIO_MODE_ALOHA;
 
+    // TODO set frame sync to relevant value
+
     return PHY_RADIO_SUCCESS;
 }
 

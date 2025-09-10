@@ -52,13 +52,12 @@
  *   - How do we go from scan to peripheral ?
  */
 
-static int32_t sync_timer_alarm_callback(phyRadioTimer_t *interface);
 static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t sync_time);
-static int32_t prepare_alarm_callback(phyRadioTimer_t *interface);
-static int32_t repeating_timer_callback(phyRadioTimer_t *interface);
+static int32_t new_frame_callback(phyRadioTimer_t *interface);
+static int32_t tick_timer_callback(phyRadioTimer_t *interface);
 
-// This alarm triggers just before the start of a frame to give time for preparing any time critical data
-static int32_t prepare_alarm_callback(phyRadioTimer_t *interface) {
+// This alarm triggers just at the start of a frame, this marks the start of the guard period where the radio can be managed
+static int32_t new_frame_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
     phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
 
@@ -74,13 +73,17 @@ static int32_t prepare_alarm_callback(phyRadioTimer_t *interface) {
     return 0;
 }
 
-// This timer triggers on the start of each new frame
-static int32_t repeating_timer_callback(phyRadioTimer_t *interface) {
+// This timer triggers at every tick interval after the frame timer
+static int32_t tick_timer_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
     phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
 
     // Get the current time
     inst->frame_start_time = time_us_64();
+
+    // Stop the tick timer, for now we only want one callback
+    // It is safe to skip the retval check here
+    phyRadioTimerStopTickTimer(&inst->radio_timer);
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
         // Set interrupt flag
@@ -95,31 +98,6 @@ static int32_t repeating_timer_callback(phyRadioTimer_t *interface) {
 
     return true;
 } 
-
-// This alarm is used to synchronize with a central device
-static int32_t sync_timer_alarm_callback(phyRadioTimer_t *interface) {
-    // Get the current phy radio instance
-    phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
-
-    // Get the current time
-    inst->frame_start_time = time_us_64();
-
-    // Start the repeating timer, do as little as possible before this point.
-    if (PHY_RADIO_TIMER_SUCCESS != phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, inst->frame_duration, PHY_RADIO_GUARD_TIME_US)) {
-        inst->mode = PHY_RADIO_FRAME_SYNC_MODE_TIMER_ERROR;
-        LOG_TIMER_ERROR("Timer error %i\n", 1);
-    }
-
-    if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
-        // Set interrupt flag
-        // If the radio is busy pass the task to the main context
-        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
-    } else {
-        phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_NEW_FRAME_EVENT);
-    }
-
-    return PHY_RADIO_FRAME_SYNC_SUCCESS;
-}
 
 static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t sync_time) {
     if (inst->mode == PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL) {
@@ -155,25 +133,17 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
             }
 
             LOG_V_DEBUG("Sync time %u, diff %i\n", sync_time, (int32_t)slot_diff);
-            LOG_DEBUG("Duriation Error: %i us\n", (int32_t)err);
+            LOG("Duriation Error: %i us\n", (int32_t)err);
             LOG_DEBUG("SLOT DURATION:   %i us\n", (int32_t)inst->frame_duration);
         }
     } else {
-        // Compute when the next slot should start
-        uint64_t next_slot_start = PHY_RADIO_SLOT_TIME_US - sync_time;
+        // We know how long it took to send the sync message, but we need to compensate for the guard infront of it
+        sync_time += PHY_RADIO_GUARD_TIME_US;
 
-        int32_t res = phyRadioTimerStartSyncTimer(&inst->radio_timer, sync_timer_alarm_callback, next_slot_start);
+        // Start combined timer with sync_time as offset
+        int32_t res = phyRadioTimerStartCombinedTimer(&inst->radio_timer, tick_timer_callback, new_frame_callback, inst->frame_duration, PHY_RADIO_GUARD_TIME_US, sync_time);
         if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 9);
-            return res;
-        }
-
-        // Set the next prepare to trigger 1ms before the slot timer
-        next_slot_start -= PHY_RADIO_GUARD_TIME_US;
-
-        res = phyRadioTimerStartSinglePrepareTimer(&inst->radio_timer, prepare_alarm_callback, next_slot_start);
-        if (res != PHY_RADIO_TIMER_SUCCESS) {
-            LOG_TIMER_ERROR("Timer error %i\n", 10);
             return res;
         }
 
@@ -296,7 +266,7 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
             break;
         case PHY_RADIO_FRAME_SYNC_MODE_CENTRAL:
              inst->mode = mode;
-             return phyRadioTimerStartCombinedTimer(&inst->radio_timer, repeating_timer_callback, prepare_alarm_callback, PHY_RADIO_SLOT_TIME_US, PHY_RADIO_GUARD_TIME_US);
+             return phyRadioTimerStartCombinedTimer(&inst->radio_timer, tick_timer_callback, new_frame_callback, PHY_RADIO_SLOT_TIME_US, PHY_RADIO_GUARD_TIME_US, 0);
         case PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL:
              inst->mode = mode;
              break;
