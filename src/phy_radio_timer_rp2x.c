@@ -21,7 +21,6 @@
  */
 
 #include "phy_radio_timer.h"
-#include "phy_radio.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
 #include "hardware/pwm.h"
@@ -44,6 +43,10 @@ struct phyRadioTimerInternal {
     float      clk_div;
     float      clk_converter;
     float      inv_clk_converter;
+
+    float      tick_clk_div;
+    float      tick_clk_converter;
+    float      tick_inv_clk_converter;
 
     bool       tick_timer_active; // Timer alarm used to start the guard period
     uint16_t   ticks_tick_timer;
@@ -68,15 +71,27 @@ static int64_t task_timer_alarm_callback(alarm_id_t id, void *user_data) {
 
 static void frame_timer_callback(void) {
     // Get the current phy radio instance
-    phyRadioTimer_t *inst =  timer_data.inst;
+    phyRadioTimer_t       *inst =  timer_data.inst;
+    phyRadioTimerConfig_t *timer_config = inst->timer_config;
 
     uint32_t irq_status = pwm_get_irq0_status_mask();
 
     if (irq_status & (1 << PHY_RADIO_TICK_TIMER_PWM_SLICE)) {
         pwm_clear_irq(PHY_RADIO_TICK_TIMER_PWM_SLICE);
 
+        // Update wrap number for tick timer
+        if (inst->tick_index < timer_config->num_ticks) {
+            pwm_set_wrap(PHY_RADIO_TICK_TIMER_PWM_SLICE, timer_config->tick_sequence[inst->tick_index]);
+            inst->tick_index++;
+        } else {
+            // Increment the index to keep track of number of interrupts
+            inst->tick_index++;
+            // Disable the PWM timer, sequence of interrupts are done
+            pwm_set_enabled(PHY_RADIO_TICK_TIMER_PWM_SLICE, false);
+        }
+
         if (inst->tick_cb != NULL) {
-            inst->tick_cb(inst);
+            inst->tick_cb(inst, inst->tick_index - 3);
         } else {
             panic("Tick timer callback is NULL\n");
         }
@@ -85,9 +100,17 @@ static void frame_timer_callback(void) {
     if (irq_status & (1 << PHY_RADIO_TIMER_PWM_SLICE)) {
         pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
 
-        // Here we should restart the tick timer
+        // Start the tick timer
+        pwm_set_enabled(PHY_RADIO_TICK_TIMER_PWM_SLICE, false);
+        // Set the first wrap value
+        pwm_set_wrap(PHY_RADIO_TICK_TIMER_PWM_SLICE, timer_config->tick_sequence[0]);
         pwm_set_counter(PHY_RADIO_TICK_TIMER_PWM_SLICE, 0);
+        // Start the timer
         pwm_set_enabled(PHY_RADIO_TICK_TIMER_PWM_SLICE, true);
+        // Pre-Load the next wrap value that will be latched on the next wrap
+        pwm_set_wrap(PHY_RADIO_TICK_TIMER_PWM_SLICE, timer_config->tick_sequence[1]);
+        // Set the index of the next value to be loaded
+        inst->tick_index = 2;
 
         if (inst->frame_cb != NULL) {
             inst->frame_cb(inst);
@@ -96,6 +119,20 @@ static void frame_timer_callback(void) {
         }
     }
 }
+
+/**
+ * To trigger the PWM interrupt sequence using IRQ, and PWM double buffered TOP value:
+ * 1. Manually write the wrap value TOP0 to the PWM
+ * 2. Start the PWM
+ * 3. Manually Buffer the wrap value TOP1 to the PWM
+ * 4. Set the index to point to wrap value TOP2
+ * 
+ * [0-TOP0] Now on the first wrap the buffered value TOP1 is written to the PWM, Write the TOP2 value to PWM buffer, increment index
+ * [0-TOP1] The second wrap triggers after TOP1, TOP2 is written to the PWM, Write the TOP3 value to PWM buffer, increment index
+ * [0-TOP2] The third wrap triggers after TOP2, TOP3 is written to the PWM, Write the TOP4 value to PWM buffer, increment index
+ * ..
+ * ..
+ */
 
 int32_t phyRadioTaskTimerInit(phyRadioTaskTimer_t *inst) {
     if (inst == NULL) {
@@ -117,7 +154,7 @@ int32_t phyRadioTaskTimerInit(phyRadioTaskTimer_t *inst) {
  * Input: phyRadioTimer instance
  * Returns: phyRadioTimerErr_t
  */
-int32_t phyRadioTimerInit(phyRadioTimer_t *inst) {
+int32_t phyRadioTimerInit(phyRadioTimer_t *inst, uint32_t max_frame_len_us, uint32_t max_tick_len_us) {
     if (inst == NULL) {
         return PHY_RADIO_TIMER_NULL_ERROR;
     }
@@ -126,15 +163,16 @@ int32_t phyRadioTimerInit(phyRadioTimer_t *inst) {
         return PHY_RADIO_TIMER_DOUBLE_INIT_ERROR;
     }
 
-    inst->initialized = true;
-    inst->tick_cb     = NULL;
-    inst->frame_cb    = NULL;
-    inst->_private    = &timer_data;
-    timer_data.inst   = inst;
+    inst->initialized  = true;
+    inst->tick_cb      = NULL;
+    inst->frame_cb     = NULL;
+    inst->timer_config = NULL;
+    inst->_private     = &timer_data;
+    timer_data.inst    = inst;
 
-    // Compute the closest clockdiv to the expected slot duration with some margin
+    // Compute the closest clockdiv to the expected maximum frame duration
     float sys_hz = (float)clock_get_hz(clk_sys);
-    timer_data.clk_div = ceilf(((PHY_RADIO_SLOT_TIME_US + PHY_RADIO_GUARD_TIME_US)/1000000.0f)/((65535.0f/sys_hz)));
+    timer_data.clk_div = ceilf(((max_frame_len_us)/1000000.0f)/((65535.0f/sys_hz)));
 
     // Compute a factor that can be used to convert from us to tics
     timer_data.clk_converter     = 0.000001f/(1.0f/(sys_hz/timer_data.clk_div));
@@ -145,18 +183,37 @@ int32_t phyRadioTimerInit(phyRadioTimer_t *inst) {
     pwm_config_set_clkdiv(&config, timer_data.clk_div);  // 1 tick = 1 us
     pwm_init(PHY_RADIO_TIMER_PWM_SLICE, &config, false);
 
-    // Configure PWM slice for tick timer with same settings as periodic timer
-    pwm_config_set_clkdiv(&config, timer_data.clk_div);  // 1 tick = 1 us
+    // Set a defualt value for number of ticks
+    uint32_t ticks = (uint32_t)(max_frame_len_us * timer_data.clk_converter);
+    pwm_config_set_wrap(&config, ticks);
+
+    // Clear the IRQ for the frame timer
+    pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
+
+    // Configure PWM slice for tick timer
+    config = pwm_get_default_config();
+    // Compute the closest clockdiv to the expected maximum tick duration
+    timer_data.tick_clk_div = ceilf(((max_tick_len_us)/1000000.0f)/((65535.0f/sys_hz)));
+
+    // Compute a factor that can be used to convert from us to tics
+    timer_data.tick_clk_converter     = 0.000001f/(1.0f/(sys_hz/timer_data.tick_clk_div));
+    timer_data.tick_inv_clk_converter = 1.0/timer_data.tick_clk_converter;
+
+    // Configure PWM slice for the tick timer
+    pwm_config_set_clkdiv(&config, timer_data.tick_clk_div);  // 1 tick = 1 us
     pwm_init(PHY_RADIO_TICK_TIMER_PWM_SLICE, &config, false);
 
-    uint32_t ticks = (uint32_t)PHY_RADIO_SLOT_TIME_US * timer_data.clk_converter;
+    // Set a defualt value for number of ticks
+    ticks = (uint32_t)(max_tick_len_us * timer_data.tick_clk_converter);
     pwm_config_set_wrap(&config, ticks);
-    pwm_clear_irq(PHY_RADIO_TIMER_PWM_SLICE);
+
+    // Clear the IRQ for the tick timer
+    pwm_clear_irq(PHY_RADIO_TICK_TIMER_PWM_SLICE);
+
+    // Configure the IRQ
     irq_set_exclusive_handler(PWM_DEFAULT_IRQ_NUM(), frame_timer_callback);
     irq_set_enabled(PWM_DEFAULT_IRQ_NUM(), true);
     irq_set_priority(PWM_DEFAULT_IRQ_NUM(), 0);
-
-    pwm_clear_irq(PHY_RADIO_TICK_TIMER_PWM_SLICE);
 
     timer_data.frame_timer_active = false;
     timer_data.tick_timer_active  = false;
@@ -220,10 +277,30 @@ int32_t phyRadioTimerStopTickTimer(phyRadioTimer_t *inst) {
     return PHY_RADIO_TIMER_SUCCESS;
 }
 
-int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t tick_cb, phyRadioTimerCb_t frame_cb, uint32_t period_us, uint32_t tick_period_us, uint32_t frame_offset_us) {
+int32_t phyRadioTimerSetConfig(phyRadioTimer_t *inst, phyRadioTimerConfig_t *config) {
+    if (inst == NULL || config == NULL || config->tick_sequence == NULL) {
+        return PHY_RADIO_TIMER_NULL_ERROR;
+    }
 
+    // Convert the tick sequence from us to timer ticks
+    for (uint32_t i = 0; i < config->num_ticks; i++) {
+        config->tick_sequence[i] = config->tick_sequence[i] * timer_data.tick_clk_converter;
+    }
+
+    // Store the config
+    inst->timer_config = config;
+
+    return PHY_RADIO_TIMER_SUCCESS;
+}
+
+int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTickTimerCb_t tick_cb, phyRadioFrameTimerCb_t frame_cb, uint32_t period_us, uint32_t tick_period_us, uint32_t frame_offset_us) {
     if (timer_data.frame_timer_active || timer_data.tick_timer_active) {
         return PHY_RADIO_TIMER_ACTIVE_ERROR;
+    }
+
+    if (inst->timer_config == NULL) {
+        // It is not possible to start the timer without a valid configuration
+        return PHY_RADIO_TIMER_NULL_ERROR;
     }
 
     inst->frame_cb     = frame_cb;
@@ -240,7 +317,7 @@ int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t
     pwm_set_irq_enabled(PHY_RADIO_TIMER_PWM_SLICE, true);
 
     inst->tick_cb               = tick_cb;
-    uint32_t tick_ticks         = (uint32_t)(tick_period_us * timer_data.clk_converter);
+    uint32_t tick_ticks         = (uint32_t)(tick_period_us * timer_data.tick_clk_converter);
     timer_data.ticks_tick_timer = tick_ticks;
 
     // Configure the tick timer but don't start it yet
@@ -256,6 +333,8 @@ int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t
 
     timer_data.tick_timer_active      = true;
     timer_data.frame_timer_active     = true;
+
+    gpio_put(HAL_RADIO_PIN_TX_RX, 0);
 
     return PHY_RADIO_TIMER_SUCCESS;
 }

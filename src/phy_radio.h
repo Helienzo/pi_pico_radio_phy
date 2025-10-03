@@ -39,7 +39,7 @@ extern "C" {
 
 // TDMA parameters
 #ifndef PHY_RADIO_NUM_SLOTS
-#define PHY_RADIO_NUM_SLOTS (2)
+#define PHY_RADIO_NUM_SLOTS (3)
 #endif /* PHY_RADIO_NUM_SLOTS */
 
 #ifndef PHY_RADIO_NUM_ITEMS_SLOTS
@@ -114,6 +114,7 @@ typedef enum {
 } phyRadioErr_t;
 
 typedef enum {
+    PHY_RADIO_MODE_FRAME_ERROR = -20093,
     PHY_RADIO_MODE_TIMER_ERROR = -20092,
     PHY_RADIO_MODE_HAL_ERROR   = -20091,
     PHY_RADIO_MODE_IDLE,
@@ -202,6 +203,11 @@ struct phyRadioInterface {
     phyRadioPacketCb_t    packet_cb;
     phyRadioSyncStateCb_t sync_state_cb;
 };
+
+// Frame structue
+typedef struct {
+    uint8_t dummy;
+} phyRadioFrameStructure_t;
 
 // Slot item
 typedef struct {
@@ -329,7 +335,17 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst);
 int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
 
 /**
- * Send a message on the next avialable slot
+ * Configure the frame structure used by the phy.
+ * Input: phyRadio instance
+ * Inpuut: New frame structure
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameStructure_t *frame);
+
+/**
+ * Send a message on the next avialable slot.
+ * This schedules the targeted slot as a TX slot either in the current frame if the slot is not yet started 
+ * or the next frame if it has passed.
  * Input: phyRadio instance
  * Input: phyRadio packet
  * Returns: phyRadioErr_t
@@ -337,7 +353,26 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
 
 /**
- * Clear all messages from a slot
+ * Receive data on a specific slot. This schedules a slot as RX for a specified time.
+ * Input: phyRadio instance
+ * Input: Targeted slot
+ * Input: Num of frames as RX. 0 indicates indefenet RX on this slot
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, uint8_t num_frames);
+
+/**
+ * Schedule a packet scanning during a slot interval and on a specific channel.
+ * Input:  phyRadio instance
+ * Input: Start scan slot
+ * Input: End scan slot
+ * Input: Channel to scan on
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioScanDuringSlots(phyRadio_t *inst, uint8_t s_slot, uint8_t e_slot, uint32_t channel);
+
+/**
+ * Clear all messages from a slot, make the slot idle, neither RX or TX.
  * Input: phyRadio instance
  * Input: Slot to clear
  * Returns: phyRadioErr_t

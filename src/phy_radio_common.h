@@ -38,18 +38,48 @@ extern "C" {
 #define PHY_RADIO_MAX_PACKET_SIZE     (HAL_RADIO_MAX_PACKET_SIZE - PHY_RADIO_OVERHEAD_SIZE)
 #define PHY_RADIO_TOTAL_OVERHEAD_SIZE (PHY_RADIO_OVERHEAD_SIZE + HAL_RADIO_PACKET_OVERHEAD)
 
+/**
+ * TODO what we want to do next is to remake what is defined as a frame and what is defined as a slot.
+ * A frame contains multiple slots. There will be no super slot. Instead the frame will be long and contain X number of slots
+ * 
+ * To make this work we might have to add a separete conversion time for the guard tick, they should have high precision, but a long frame should not
+ * 
+ */
+
 // Slot times in us
-#ifndef PHY_RADIO_SLOT_TIME_US
-#define PHY_RADIO_SLOT_TIME_US (20000)
+#ifndef PHY_RADIO_SLOT_GUARD_TIME_US
+#define PHY_RADIO_SLOT_GUARD_TIME_US (400)
+#endif /* PHY_RADIO_SLOT_GUARD_TIME_US */
+
+#ifndef PHY_RADIO_ACTIVE_SLOT_TIME_US 
+#define PHY_RADIO_ACTIVE_SLOT_TIME_US (7800)
+#endif /* PHY_RADIO_ACTIVE_SLOT_TIME_US */
+
+#ifndef PHY_RADIO_NUM_TICKS_IN_SLOT
+#define PHY_RADIO_NUM_TICKS_IN_SLOT (2)
+#endif /* PHY_RADIO_NUM_TICKS_IN_SLOT */ 
+
+#ifndef PHY_RADIO_SLOT_TIME_US 
+#define PHY_RADIO_SLOT_TIME_US (PHY_RADIO_SLOT_GUARD_TIME_US + PHY_RADIO_ACTIVE_SLOT_TIME_US)
 #endif /* PHY_RADIO_SLOT_TIME_US */
 
-#ifndef PHY_RADIO_SUPERFRAME_LEN
-#define PHY_RADIO_SUPERFRAME_LEN (20)
-#endif /* PHY_RADIO_SUPERFRAME_LEN */
+// Frame end guard
+#ifndef PHY_RADIO_NUM_SLOTS_IN_FRAME
+#define PHY_RADIO_NUM_SLOTS_IN_FRAME (3)
+#endif /* PHY_RADIO_NUM_SLOTS_IN_FRAME */
 
-#ifndef PHY_RADIO_GUARD_TIME_US
-#define PHY_RADIO_GUARD_TIME_US (1000)
-#endif /* PHY_RADIO_GUARD_TIME_US */
+#ifndef PHY_RADIO_FRAME_GUARD_US
+#define PHY_RADIO_FRAME_GUARD_US (200)
+#endif /* PHY_RADIO_FRAME_GUARD_US */
+
+#ifndef PHY_RADIO_FRAME_TIME_US
+#define PHY_RADIO_FRAME_TIME_US (PHY_RADIO_NUM_SLOTS_IN_FRAME * PHY_RADIO_SLOT_TIME_US + PHY_RADIO_FRAME_GUARD_US)
+#endif /* PHY_RADIO_FRAME_TIME_US */
+
+// Number of guard periods in a slot
+#ifndef PHY_RADIO_NUM_TICKS_IN_FRAME
+#define PHY_RADIO_NUM_TICKS_IN_FRAME (PHY_RADIO_NUM_SLOTS_IN_FRAME * PHY_RADIO_NUM_TICKS_IN_SLOT)
+#endif /* PHY_RADIO_NUM_TICKS_IN_FRAME */
 
 #ifndef PHY_RADIO_BROADCAST_ADDR
 #define PHY_RADIO_BROADCAST_ADDR (0xFF)
@@ -76,12 +106,21 @@ struct phyRadioPacket {
 };
 
 typedef enum {
+    // This is a NOPE event
+    FRAME_SYNC_ERROR_EVENT,
+    // This event is triggered when a peripheral detects and locks on to a first sync
     FRAME_SYNC_START_EVENT,
+    // This event is triggered at the start of a new frame, after this follows a guard period
     FRAME_SYNC_NEW_FRAME_EVENT,
-    FRAME_SYNC_GUARD_EVENT,
+    // This event is triggered at the start of the first slot in the frame
+    FRAME_SYNC_FIRST_SLOT_START_EVENT,
+    // This event is triggered at the start of a slot, after this follows a guard period
+    FRAME_SYNC_SLOT_GUARD_EVENT,
+    // This event is triggered at the end of the slot guard, after this the active part of the slot follows
+    FRAME_SYNC_SLOT_START_EVENT,
 } phyRadioFrameSyncEvent_t;
 
-int32_t phyRadioFrameSyncCallback(phyRadio_t *inst, phyRadioFrameSyncEvent_t event);
+int32_t phyRadioFrameSyncCallback(phyRadio_t *inst, phyRadioFrameSyncEvent_t event, uint16_t slot_index);
 
 #ifdef __cplusplus
 }

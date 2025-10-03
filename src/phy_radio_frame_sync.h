@@ -81,8 +81,10 @@ typedef enum {
 
 typedef enum {
     PHY_RADIO_FRAME_SYNC_INT_IDLE = 0,
-    PHY_RADIO_FRAME_SYNC_INT_GUARD,
     PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME,
+    PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT,
+    PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD,
+    PHY_RADIO_FRAME_SYNC_INT_SLOT_START,
 } phyRadioFrameSyncInterruptEvent_t;
 
 /**
@@ -129,7 +131,8 @@ typedef struct {
 
     // The estimated length of the centrals superslot time
     // Due to slight clock drift it might differ from ours
-    uint64_t frame_start_time;
+    uint16_t slot_index;
+    uint64_t slot_start_time;
     uint64_t frame_duration;
     float    float_frame_duration;
 
@@ -137,7 +140,6 @@ typedef struct {
     float   error_prev;
     float   integral;
 
-    float    inverse_of_num_slots;
 } phyRadioFrameSync_t;
 
 /**
@@ -177,6 +179,8 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
  
 /**
  * Check time remaining in frame
+ * 
+// TODO the name of this should be time in slot
  */
 int32_t phyRadioFrameSyncTimeLeftInFrame(phyRadioFrameSync_t *inst);
 

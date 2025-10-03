@@ -47,7 +47,10 @@
 
 typedef enum {
     PHY_RADIO_INT_IDLE = 0,
-    PHY_RADIO_INT_SLOT_TIMER,
+    PHY_RADIO_INT_FRAME_GUARD_TIMER, // Currently unused
+    PHY_RADIO_INT_FRAME_START_TIMER,
+    PHY_RADIO_INT_SLOT_GUARD_START_TIMER, // Currently unused
+    PHY_RADIO_INT_SLOT_START_TIMER,
     PHY_RADIO_INT_SCAN_TIMER,
     PHY_RADIO_INT_SEND_TIMER,
     PHY_RADIO_INT_REPEATING_TIMER,
@@ -64,7 +67,7 @@ static int32_t send_timer_alarm_callback(phyRadioTaskTimer_t *interface);
 static inline int32_t cancelAllTimers(phyRadio_t *inst);
 static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t* packet);
 static int32_t manageGuardTimerInterrupt(phyRadio_t *inst);
-static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst);
+static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst, uint16_t slot_index);
 static int32_t clearAndNotifyPacketQueueInSlot(phyRadio_t *inst, phyRadioTdma_t *scheduler, uint8_t slot);
 
 static int32_t send_timer_alarm_callback(phyRadioTaskTimer_t *interface) {
@@ -87,17 +90,23 @@ static int32_t scan_timer_alarm_callback(phyRadioTaskTimer_t *interface) {
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst) {
+// Start of new frame, after this there is a guard time
+static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst, uint16_t slot_index) {
+    // Cancel RX
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
+    tdma_scheduler->current_slot = slot_index;
 
-    // Get the next slot
-    tdma_scheduler->current_slot = MODULO_INC(tdma_scheduler->current_slot, PHY_RADIO_NUM_SLOTS);
-    tdma_scheduler->superslot_counter = MODULO_INC(tdma_scheduler->superslot_counter, PHY_RADIO_SUPERFRAME_LEN);
+
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
+            // Inidicate new frame by toggling the GPIO
+            gpio_put(HAL_RADIO_PIN_TX_RX, 0);
+            gpio_put(HAL_RADIO_PIN_TX_RX, 1);
+            gpio_put(HAL_RADIO_PIN_TX_RX, 0);
+#endif
 
     // Check what slot we are currently in
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
         case PHY_RADIO_SLOT_TX: {
-            // Cancel RX
             int32_t res = halRadioCancelReceive(&inst->hal_radio_inst);
 
             if (res != HAL_RADIO_SUCCESS) {
@@ -105,22 +114,19 @@ static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst) {
                 return res;
             }
 
-            // Check if it is time to send the next sync message, given that we are the central device
-            if (tdma_scheduler->superslot_counter == 0) {
-                if (inst->sync_state.mode == PHY_RADIO_MODE_CENTRAL) {
-
-                    int32_t res = phyRadioFrameSyncQueueNextSync(&inst->tdma_scheduler.frame_sync, &inst->tdma_scheduler.active_item);
-                    if (res != STATIC_QUEUE_SUCCESS) {
-                        LOG("Failed to queue %i\n", res);
-                        return res;
-                    }
-
-                    // A sync packet is now in fligt
-                    inst->tdma_scheduler.in_flight = true;
-                } else {
-                    // Keep track of number of syncs
-                    inst->tdma_scheduler.sync_counter++;
+            // Check if we are the central device and are expected to send a sync
+            if (inst->sync_state.mode == PHY_RADIO_MODE_CENTRAL) {
+                int32_t res = phyRadioFrameSyncQueueNextSync(&inst->tdma_scheduler.frame_sync, &inst->tdma_scheduler.active_item);
+                if (res != STATIC_QUEUE_SUCCESS) {
+                    LOG("Failed to queue %i\n", res);
+                    return res;
                 }
+
+                // A sync packet is now in fligt
+                inst->tdma_scheduler.in_flight = true;
+            } else {
+                // Keep track of number of syncs
+                inst->tdma_scheduler.sync_counter++;
             }
         } break;
         case PHY_RADIO_SLOT_RX: {
@@ -142,21 +148,23 @@ static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst) {
                 return res;
             }
 
-            if (tdma_scheduler->superslot_counter == 0) {
-                // Keep track of number of syncs
-                inst->tdma_scheduler.sync_counter++;
-            }
+            // Keep track of number of syncs
+            inst->tdma_scheduler.sync_counter++;
         } break;
         default:
             // Do nothing
             break;
     }
 
+    // The frame start does not require any main context processing
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t manageGuardTimerInterrupt(phyRadio_t *inst) {
+// Start of first slot, time to send sync
+static int32_t manageNewFrameStartTimerInterrupt(phyRadio_t *inst, uint16_t slot_index) {
+    UNUSED(slot_index);
     phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
+
     // Check what slot we are currently in
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
         case PHY_RADIO_SLOT_TX: {
@@ -165,6 +173,7 @@ static int32_t manageGuardTimerInterrupt(phyRadio_t *inst) {
             gpio_put(HAL_RADIO_PIN_TX_RX, 1);
 #endif
 
+            // We are expected to send the next sync message
             int32_t res = phyRadioFrameSyncSendNextSync(&inst->tdma_scheduler.frame_sync);
 
             if (res != HAL_RADIO_SUCCESS) {
@@ -173,7 +182,7 @@ static int32_t manageGuardTimerInterrupt(phyRadio_t *inst) {
             }
         } break;
         case PHY_RADIO_SLOT_RX:
-            // If this is the case we are allready in RX mode
+            // If this is the case we are allready in RX mode, lets hope we get a sync
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
             // Inidicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 0);
@@ -185,8 +194,93 @@ static int32_t manageGuardTimerInterrupt(phyRadio_t *inst) {
     }
 
     // Set the interrupt flag for next processing
-    inst->timer_interrupt = PHY_RADIO_INT_SLOT_TIMER;
+    inst->timer_interrupt = PHY_RADIO_INT_FRAME_START_TIMER;
+}
 
+static int32_t manageSlotStartTimerInterrupt(phyRadio_t *inst, uint16_t slot_index) {
+    UNUSED(slot_index);
+    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
+
+    // Trigger main context processing
+    inst->timer_interrupt = PHY_RADIO_INT_SLOT_START_TIMER;
+
+    // Check what slot we are currently in
+    switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
+        case PHY_RADIO_SLOT_TX: {
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
+            // Inidicate current state using GPIO
+            gpio_put(HAL_RADIO_PIN_TX_RX, 0);
+#endif
+        } break;
+        case PHY_RADIO_SLOT_RX:
+            // If this is the case we are allready in RX mode, lets hope we get a sync
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
+            // Inidicate current state using GPIO
+            gpio_put(HAL_RADIO_PIN_TX_RX, 1);
+#endif
+            break;
+        default:
+            // Do nothing
+            break;
+    }
+
+    return PHY_RADIO_SUCCESS;
+}
+
+static int32_t manageSlotGuardTimerInterrupt(phyRadio_t *inst, uint16_t slot_index) {
+    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
+
+    // Store the next slot
+    tdma_scheduler->current_slot = slot_index;
+
+    // Check what slot we are currently in
+    switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
+        case PHY_RADIO_SLOT_TX: {
+
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
+            // Inidicate current state using GPIO
+            gpio_put(HAL_RADIO_PIN_TX_RX, 1);
+#endif
+
+            // If the next slot is TX first Cancel RX
+            int32_t res = halRadioCancelReceive(&inst->hal_radio_inst);
+
+            if (res != HAL_RADIO_SUCCESS) {
+                LOG("Failed to cancel %i\n",res);
+                return res;
+            }
+        } break;
+        case PHY_RADIO_SLOT_RX: {
+
+#ifdef HAL_RADIO_SLOT_GPIO_DEBUG
+            // Inidicate current state using GPIO
+            gpio_put(HAL_RADIO_PIN_TX_RX, 0);
+#endif
+
+            int32_t res = PHY_RADIO_SUCCESS;
+            if (inst->tdma_scheduler.in_flight) {
+                // A packet failed to complete it's transmission, cancel TX mode.
+                if ((res = halRadioCancelTransmit(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
+                    return res;
+                }
+                // The management of this will be done in main context
+            }
+
+            // Go to RX mode
+            inst->hal_interface.pkt_buffer = &inst->rx_buffer;
+            res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, false);
+
+            if (res != HAL_RADIO_SUCCESS) {
+                LOG("Failed to receive %i\n", res);
+                return res;
+            }
+        } break;
+        default:
+            // Do nothing
+            break;
+    }
+
+    // The start of a guard period in a new slot does not require any main context processing
     return PHY_RADIO_SUCCESS;
 }
 
@@ -522,7 +616,6 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
 
                 // TODO, this should not have to be done on each sync
                 // New superslot detected, new sync detected
-                inst->tdma_scheduler.superslot_counter = 0;
                 inst->tdma_scheduler.sync_counter = 0;
 
                 // Switch the phy to peripheral mode, to enable the higher layer to send messages
@@ -583,7 +676,6 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
 
                 // TODO, this should not have to be done on each sync
                 // New superslot detected, new sync detected
-                inst->tdma_scheduler.superslot_counter = 0;
                 inst->tdma_scheduler.sync_counter = 0;
 
                 // Notify that a resync has been received
@@ -645,7 +737,6 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
 
                         // TODO, this should not have to be done on each sync
                         // New superslot detected, new sync detected
-                        inst->tdma_scheduler.superslot_counter = 0;
                         inst->tdma_scheduler.sync_counter = 0;
 
                         // Notify that a device has been found, TODO fix assignment
@@ -852,7 +943,6 @@ static int32_t clearAndNotifyPacketQueue(phyRadio_t *inst, phyRadioTdma_t *sched
 static int32_t resetTdmaScheduler(phyRadioTdma_t *inst) {
     // Reset all counters
     inst->current_slot = 0;
-    inst->superslot_counter = 0;
     inst->sync_counter = 0;
     inst->in_flight    = false;
 
@@ -881,7 +971,6 @@ static int32_t resetTdmaScheduler(phyRadioTdma_t *inst) {
 static int32_t initTdmaScheduler(phyRadioTdma_t *inst, const phyRadioTdmaInit_t *init_struct) {
     // Reset all counters
     inst->current_slot      = 0;
-    inst->superslot_counter = 0;
     inst->sync_counter      = 0;
     inst->in_flight         = false;
 
@@ -981,19 +1070,32 @@ static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, 
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t processCentral(phyRadio_t *inst) {
+static int32_t processCentralFrameStart(phyRadio_t *inst) {
     phyRadioTdma_t* tdma_scheduler = &inst->tdma_scheduler;
     int32_t res = PHY_RADIO_SUCCESS;
 
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
         case PHY_RADIO_SLOT_TX: {
             // Notify that sync has been sent
-            if (tdma_scheduler->superslot_counter == 0) {
-                // The sync is in transit, TODO fix assignment
-                inst->sync_state.tx_slot_number = PHY_RADIO_CENTRAL_TX_SLOT;
-                inst->sync_state.central_address = inst->my_address;
-            }
+            // The sync is in transit, TODO fix assignment
+            inst->sync_state.tx_slot_number = PHY_RADIO_CENTRAL_TX_SLOT;
+            inst->sync_state.central_address = inst->my_address;
+        } break;
+        case PHY_RADIO_SLOT_RX:
+            // Do nothing
+        default:
+        break;
+    }
 
+    return PHY_RADIO_SUCCESS;
+}
+
+static int32_t processCentral(phyRadio_t *inst) {
+    phyRadioTdma_t* tdma_scheduler = &inst->tdma_scheduler;
+    int32_t res = PHY_RADIO_SUCCESS;
+
+    switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
+        case PHY_RADIO_SLOT_TX: {
             // Send the next package
             if ((res = sendDuringSlot(inst, tdma_scheduler, tdma_scheduler->current_slot)) != PHY_RADIO_SUCCESS) {
                 return res;
@@ -1130,7 +1232,8 @@ static int32_t processPeripheral(phyRadio_t *inst) {
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t manageStartSyncEvent(phyRadio_t *inst) {
+static int32_t manageStartSyncEvent(phyRadio_t *inst, uint16_t slot_index) {
+    UNUSED(slot_index);
     // New sync detected, reset the counters
     inst->tdma_scheduler.current_slot = 0;
 
@@ -1149,17 +1252,24 @@ static int32_t manageStartSyncEvent(phyRadio_t *inst) {
     return PHY_RADIO_SUCCESS;
 }
 
-int32_t phyRadioFrameSyncCallback(phyRadio_t *inst, phyRadioFrameSyncEvent_t event) {
+int32_t phyRadioFrameSyncCallback(phyRadio_t *inst, phyRadioFrameSyncEvent_t event, uint16_t slot_index) {
     // Manage the new event
     switch (event)
     {
         case FRAME_SYNC_START_EVENT:
-            return manageStartSyncEvent(inst);
-        case FRAME_SYNC_GUARD_EVENT:
-            return manageGuardTimerInterrupt(inst);
+            return manageStartSyncEvent(inst, slot_index);
         case FRAME_SYNC_NEW_FRAME_EVENT:
-            return manageNewFrameTimerInterrupt(inst);
+            return manageNewFrameTimerInterrupt(inst, slot_index);
+        case FRAME_SYNC_FIRST_SLOT_START_EVENT:
+            return manageNewFrameStartTimerInterrupt(inst, slot_index);
+        case FRAME_SYNC_SLOT_GUARD_EVENT:
+            return manageSlotGuardTimerInterrupt(inst, slot_index);
+        case FRAME_SYNC_SLOT_START_EVENT:
+            return manageSlotStartTimerInterrupt(inst, slot_index);
+        case FRAME_SYNC_ERROR_EVENT:
+            // Fall through
         default:
+            inst->sync_state.mode = PHY_RADIO_MODE_FRAME_ERROR;
             break;
     }
 
@@ -1182,17 +1292,36 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
     switch(inst->timer_interrupt) {
         case PHY_RADIO_INT_IDLE:
             break;
-        case PHY_RADIO_INT_SLOT_TIMER:
+        case PHY_RADIO_INT_FRAME_START_TIMER:
+            // Main context processing of a frame start
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            switch(inst->sync_state.mode) {
+                case PHY_RADIO_MODE_CENTRAL:
+                    return processCentralFrameStart(inst); // This would be superslot = 0
+                case PHY_RADIO_MODE_PERIPHERAL:
+                    return processPeripheral(inst);
+                default:
+                    break;
+            } break;
+        case PHY_RADIO_INT_SLOT_START_TIMER:
+            // Main context processing of a slot start
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            switch(inst->sync_state.mode) {
+                case PHY_RADIO_MODE_CENTRAL:
+                    return processCentral(inst); // This would be any regular slot
+                case PHY_RADIO_MODE_PERIPHERAL:
+                    return processPeripheral(inst);
+                default:
+                    break;
+            }
+
+            break;
         case PHY_RADIO_INT_SCAN_TIMER: {
             // Manage timer tasks
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
             LOG_V_DEBUG("Repeat at %lld\n", time_us_64());
 
             switch(inst->sync_state.mode) {
-                case PHY_RADIO_MODE_CENTRAL:
-                    return processCentral(inst);
-                case PHY_RADIO_MODE_PERIPHERAL:
-                    return processPeripheral(inst);
                 case PHY_RADIO_MODE_SCAN:
                     return processScan(inst);
                 default:
@@ -1207,7 +1336,6 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
         case PHY_RADIO_INT_SEND_TIMER: {
             // Manage send task
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
-
             int32_t res = sendOnTimerInterrupt(inst, &inst->tdma_scheduler);
 
             return res;
@@ -1349,7 +1477,6 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
 
     // Reset all counters
     inst->tdma_scheduler.current_slot = 0;
-    inst->tdma_scheduler.superslot_counter = 0;
     inst->tdma_scheduler.sync_counter = 0;
 
     return PHY_RADIO_SUCCESS;

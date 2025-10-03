@@ -28,7 +28,7 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(radio_phy_tdd_central C CXX ASM)
+project(radio_phy_trx C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
@@ -79,32 +79,32 @@ add_subdirectory(${MODULE_PATH} libs/pi_pico_radio_phy)
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(radio_phy_tdd_central radio_phy_tdd_central.c )
+add_executable(radio_phy_trx radio_phy_trx.c )
 
-pico_set_program_name(radio_phy_tdd_central "radio_phy_tdd_central")
-pico_set_program_version(radio_phy_tdd_central "0.1")
+pico_set_program_name(radio_phy_trx "radio_phy_trx")
+pico_set_program_version(radio_phy_trx "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(radio_phy_tdd_central 1)
-pico_enable_stdio_usb(radio_phy_tdd_central 1)
-
-# Add the standard library to the build
-target_link_libraries(radio_phy_tdd_central
-        pico_stdlib)
+pico_enable_stdio_uart(radio_phy_trx 1)
+pico_enable_stdio_usb(radio_phy_trx 1)
 
 # Set compile-time options via -D flags
-target_compile_definitions(radio_phy_tdd_central PRIVATE
+target_compile_definitions(radio_phy_trx PRIVATE
     HAL_RADIO_SLOT_GPIO_DEBUG=1
     HAL_RADIO_PIN_TX_RX=22
 )
 
+# Add the standard library to the build
+target_link_libraries(radio_phy_trx
+        pico_stdlib)
+
 # Add the standard include files to the build
-target_include_directories(radio_phy_tdd_central PRIVATE
+target_include_directories(radio_phy_trx PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
 # Add any user requested libraries
-target_link_libraries(radio_phy_tdd_central 
+target_link_libraries(radio_phy_trx 
         hardware_pwm
         hardware_spi
         rp2x_rfm69_lib
@@ -116,4 +116,5 @@ target_link_libraries(radio_phy_tdd_central
         pi_pico_radio_phy
         )
 
-pico_add_extra_outputs(radio_phy_tdd_central)
+pico_add_extra_outputs(radio_phy_trx)
+

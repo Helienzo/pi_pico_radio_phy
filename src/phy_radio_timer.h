@@ -36,19 +36,30 @@ typedef enum {
 } phyRadioTimerErr_t;
 
 typedef struct phyRadioTimer phyRadioTimer_t;
+typedef struct phyRadioTimerConfig phyRadioTimerConfig_t;
 typedef struct phyRadioTaskTimer phyRadioTaskTimer_t;
 
 typedef struct phyRadioTimerInternal phyRadioTimerInternal_t;
 
-typedef int32_t (*phyRadioTimerCb_t)(phyRadioTimer_t *inst);
+typedef int32_t (*phyRadioFrameTimerCb_t)(phyRadioTimer_t *inst);
+typedef int32_t (*phyRadioTickTimerCb_t)(phyRadioTimer_t *inst, uint16_t index);
 typedef int32_t (*phyRadioTaskTimerCb_t)(phyRadioTaskTimer_t *inst);
 
 struct phyRadioTimer {
     bool                     initialized;
     phyRadioTimerInternal_t *_private;
 
-    phyRadioTimerCb_t tick_cb;
-    phyRadioTimerCb_t frame_cb;
+    phyRadioFrameTimerCb_t      frame_cb;
+    phyRadioTickTimerCb_t      tick_cb;
+
+    // Tick sequence configurations
+    uint16_t               tick_index;
+    phyRadioTimerConfig_t *timer_config;
+};
+
+struct phyRadioTimerConfig {
+    uint16_t *tick_sequence; // Array of tick intervals
+    uint16_t  num_ticks;     // Number of elements in the array
 };
 
 struct phyRadioTaskTimer {
@@ -62,7 +73,16 @@ struct phyRadioTaskTimer {
  * Input: phyRadioTimer instance
  * Returns: phyRadioTimerErr_t
  */
-int32_t phyRadioTimerInit(phyRadioTimer_t *inst);
+int32_t phyRadioTimerInit(phyRadioTimer_t *inst, uint32_t max_frame_len_us, uint32_t max_tick_len_us);
+
+/**
+ * Set a tick timer sequence configuration
+ * Input: phyRadioTimer instance
+ * Input: configuration, NOTE this parameter must persist through the lifetime of the timer instance
+ *        the data stored in the configuration will be updated. Only call this function once for a given config.
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerSetConfig(phyRadioTimer_t *inst, phyRadioTimerConfig_t *config);
 
 /**
  * De-Init the phy radio timer
@@ -95,7 +115,7 @@ int32_t phyRadioTimerStopTickTimer(phyRadioTimer_t *inst);
  * Input: Frame timer offset (starts frame timer this many us into the period)
  * Returns: phyRadioTimerErr_t
  */
-int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t tick_cb, phyRadioTimerCb_t frame_cb, uint32_t period_us, uint32_t tick_period_us, uint32_t frame_offset_us);
+int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTickTimerCb_t tick_cb, phyRadioFrameTimerCb_t frame_cb, uint32_t period_us, uint32_t tick_period_us, uint32_t frame_offset_us);
 
 /**
  * Update the period synchronously on both frame timers keeping the tick timer
