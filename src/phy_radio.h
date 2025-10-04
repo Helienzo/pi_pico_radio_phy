@@ -39,7 +39,7 @@ extern "C" {
 
 // TDMA parameters
 #ifndef PHY_RADIO_NUM_SLOTS
-#define PHY_RADIO_NUM_SLOTS (3)
+#define PHY_RADIO_NUM_SLOTS (PHY_RADIO_NUM_SLOTS_IN_FRAME)
 #endif /* PHY_RADIO_NUM_SLOTS */
 
 #ifndef PHY_RADIO_NUM_ITEMS_SLOTS
@@ -50,9 +50,9 @@ extern "C" {
 #define PHY_RADIO_SYNC_TIMEOUT (3)
 #endif /* PHY_RADIO_SYNC_TIMEOUT */
 
-#ifndef PHY_RADIO_PERIPHERAL_TX_SLOT
-#define PHY_RADIO_PERIPHERAL_TX_SLOT (1)
-#endif /* PHY_RADIO_PERIPHERAL_TX_SLOT */
+#ifndef PHY_RADIO_PERIPHERAL_RX_SLOT
+#define PHY_RADIO_PERIPHERAL_RX_SLOT (0)
+#endif /* PHY_RADIO_PERIPHERAL_RX_SLOT */
 
 #ifndef PHY_RADIO_CENTRAL_TX_SLOT
 #define PHY_RADIO_CENTRAL_TX_SLOT (0)
@@ -93,6 +93,8 @@ extern "C" {
 #ifndef PHY_RADIO_DEFAULT_TX_POWER_DBM
 #define PHY_RADIO_DEFAULT_TX_POWER_DBM (0)
 #endif /* PHY_RADIO_DEFAULT_TX_POWER_DBM */
+
+#define PHY_RADIO_INFINITE_SLOT_TYPE (-1)
 
 typedef enum {
     PHY_RADIO_INTERRUPT_IN_QUEUE = 1,
@@ -225,6 +227,9 @@ typedef struct {
 
         // Slot type
         phyRadioSlotType_t type;
+
+        // Time as type
+        uint32_t num_frames_as_type;
     } slot[PHY_RADIO_NUM_SLOTS];
 
     uint8_t            current_slot;
@@ -245,9 +250,9 @@ typedef struct {
 
 struct phyRadioSyncState {
     // TODO, pehaps inform about the slot scheme.
-    uint32_t       tx_slot_number;  // The current phy radio tx slot number
-    phyRadioMode_t mode;            // The current phy radio mode
-    uint8_t        central_address; // The address to the central device
+    uint32_t       sync_slot_number; // The current phy radio slot used for sync messages
+    phyRadioMode_t mode;             // The current phy radio mode
+    uint8_t        central_address;  // The address to the central device
 };
 
 typedef struct {
@@ -329,6 +334,21 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst);
  */
 int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
 
+
+/**
+ * Transition from Central to Peripheral without losing sync
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioTransitionCentralToPeripheral(phyRadio_t *inst, uint32_t timeout_ms);
+
+/**
+ * Transition from Peripheral to Central without losing sync
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioTransitionPeripheralToCentral(phyRadio_t *inst, uint32_t timeout_ms);
+
 /**
  * Configure the frame structure used by the phy.
  * Input: phyRadio instance
@@ -351,10 +371,10 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
  * Receive data on a specific slot. This schedules a slot as RX for a specified time.
  * Input: phyRadio instance
  * Input: Targeted slot
- * Input: Num of frames as RX. 0 indicates indefenet RX on this slot
+ * Input: Num of frames as RX. -1 indicates indefinite RX on this slot
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, uint8_t num_frames);
+int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, int16_t num_frames);
 
 /**
  * Schedule a packet scanning during a slot interval and on a specific channel.

@@ -607,19 +607,22 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
             // Check if the incomming packet is a broadcast, sync packet
             if (hal_packet->address == PHY_RADIO_BROADCAST_ADDR && phy_pkt_type == PHY_RADIO_PKT_INTERNAL_SYNC) {
 
-                // Central device has been found, populate the slots with correct values
+                // Central device has been found, synchronize internal timers with central
                 int32_t res = phyRadioFrameSyncNewSync(&inst->tdma_scheduler.frame_sync, phy_header_msb, &new_packet, hal_packet);
                 if (res != PHY_RADIO_SUCCESS) {
                     LOG("SYNC FAILED! %i\n", res);
                     return res;
                 }
 
-                // TODO, this should not have to be done on each sync
-                // New superslot detected, new sync detected
+                // New sync detected
                 inst->tdma_scheduler.sync_counter = 0;
 
                 // Switch the phy to peripheral mode, to enable the higher layer to send messages
                 inst->sync_state.mode = PHY_RADIO_MODE_PERIPHERAL;
+
+                // A peripheral device must have at least one RX slot to listen on syncs
+                inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].type = PHY_RADIO_SLOT_RX;
+                inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].num_frames_as_type = PHY_RADIO_INFINITE_SLOT_TYPE;
 
                 // Update frame sync state
                 res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL);
@@ -627,8 +630,8 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                     return res;
                 }
 
-                // Notify that a device has been found, TODO fix assignment
-                inst->sync_state.tx_slot_number  = PHY_RADIO_PERIPHERAL_TX_SLOT;
+                // Notify that a central device has been found
+                inst->sync_state.sync_slot_number = PHY_RADIO_PERIPHERAL_RX_SLOT;
                 inst->sync_state.central_address = sender_address;
                 int32_t cb_res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_FIRST_SYNC, &inst->sync_state);
 
@@ -640,9 +643,9 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                     case PHY_RADIO_CB_SUCCESS:
                         // Return to scan mode
                     case PHY_RADIO_CB_SET_SCAN: {
-                        // Reset the sync state, TODO fix assignment
-                        inst->sync_state.tx_slot_number = PHY_RADIO_PERIPHERAL_TX_SLOT;
+                        // Reset the sync state
                         inst->sync_state.central_address = 0x00;
+
                         // Cancel all active timers
                         if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
                             return res;
@@ -674,7 +677,6 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                     return res;
                 }
 
-                // TODO, this should not have to be done on each sync
                 // New superslot detected, new sync detected
                 inst->tdma_scheduler.sync_counter = 0;
 
@@ -688,9 +690,9 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
 
                         break;
                     case PHY_RADIO_CB_SET_SCAN: {
-                        // Reset the sync state, TODO fix assignment
-                        inst->sync_state.tx_slot_number = PHY_RADIO_PERIPHERAL_TX_SLOT;
+                        // Reset the sync state
                         inst->sync_state.central_address = 0x00;
+
                         // Cancel all active timers
                         if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
                             return res;
@@ -735,13 +737,16 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                             return res;
                         }
 
-                        // TODO, this should not have to be done on each sync
                         // New superslot detected, new sync detected
                         inst->tdma_scheduler.sync_counter = 0;
 
-                        // Notify that a device has been found, TODO fix assignment
-                        inst->sync_state.tx_slot_number  = PHY_RADIO_PERIPHERAL_TX_SLOT;
-                        inst->sync_state.central_address = sender_address;
+                        // Notify that a device has been found
+                        inst->sync_state.sync_slot_number = PHY_RADIO_PERIPHERAL_RX_SLOT;
+                        inst->sync_state.central_address  = sender_address;
+
+                        // A peripheral device must have at least one RX slot to listen on syncs
+                        inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].type = PHY_RADIO_SLOT_RX;
+                        inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].num_frames_as_type = PHY_RADIO_INFINITE_SLOT_TYPE;
 
                         // Set peripheral mode
                         inst->sync_state.mode = PHY_RADIO_MODE_PERIPHERAL;
@@ -752,8 +757,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                         }
                     } break;
                     case PHY_RADIO_CB_SET_SCAN: {
-                        // Reset the sync state, TODO fix assignment
-                        inst->sync_state.tx_slot_number = PHY_RADIO_PERIPHERAL_TX_SLOT;
+                        // Reset the sync state
                         inst->sync_state.central_address = 0x00;
                         // Cancel all active timers
                         if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
@@ -955,14 +959,9 @@ static int32_t resetTdmaScheduler(phyRadioTdma_t *inst) {
             return res;
         }
 
-        // Set slot type based on it's index, TODO fix the assignment
-        if (i % 2 == 0) {
-            // All even slots are of RX type (Including slot 0)
-            inst->slot[i].type = PHY_RADIO_SLOT_TX;
-        } else {
-            // All uneven slots are of TX type (Including slot 0)
-            inst->slot[i].type = PHY_RADIO_SLOT_RX;
-        }
+        // Reset all slots to IDLE
+        inst->slot[i].type               = PHY_RADIO_SLOT_IDLE;
+        inst->slot[i].num_frames_as_type = 0;
     }
 
     return PHY_RADIO_SUCCESS;
@@ -1000,14 +999,9 @@ static int32_t initTdmaScheduler(phyRadioTdma_t *inst, const phyRadioTdmaInit_t 
             return res;
         }
 
-        // Set slot type based on it's index, TODO fix the assignment
-        if (i % 2 == 0) {
-            // All even slots are of RX type (Including slot 0)
-            inst->slot[i].type = PHY_RADIO_SLOT_TX;
-        } else {
-            // All uneven slots are of TX type (Including slot 0)
-            inst->slot[i].type = PHY_RADIO_SLOT_RX;
-        }
+        // Initiate all slots as IDLE
+        inst->slot[i].type               = PHY_RADIO_SLOT_IDLE;
+        inst->slot[i].num_frames_as_type = 0;
     }
 
     return PHY_RADIO_SUCCESS;
@@ -1077,8 +1071,8 @@ static int32_t processCentralFrameStart(phyRadio_t *inst) {
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].type) {
         case PHY_RADIO_SLOT_TX: {
             // Notify that sync has been sent
-            // The sync is in transit, TODO fix assignment
-            inst->sync_state.tx_slot_number = PHY_RADIO_CENTRAL_TX_SLOT;
+            // The sync is in transit
+            inst->sync_state.sync_slot_number = PHY_RADIO_CENTRAL_TX_SLOT;
             inst->sync_state.central_address = inst->my_address;
         } break;
         case PHY_RADIO_SLOT_RX:
@@ -1162,8 +1156,7 @@ static int32_t processPeripheral(phyRadio_t *inst) {
         // Manage the callback result
         switch (cb_res) {
             case PHY_RADIO_CB_SET_SCAN: {
-                // Reset the sync state, TODO fix assignment
-                inst->sync_state.tx_slot_number = PHY_RADIO_PERIPHERAL_TX_SLOT;
+                // Reset the sync state
                 inst->sync_state.central_address = 0x00;
 
                 // Set scan mode
@@ -1237,17 +1230,9 @@ static int32_t manageStartSyncEvent(phyRadio_t *inst, uint16_t slot_index) {
     // New sync detected, reset the counters
     inst->tdma_scheduler.current_slot = 0;
 
-    // Initialize all queues, TODO fix the assignment
-    for (uint32_t i = 0; i < PHY_RADIO_NUM_SLOTS; i++) {
-        // Set slot type based on it's index
-        if (i % 2 == 0) {
-            // All even slots are of RX type (Including slot 0)
-            inst->tdma_scheduler.slot[i].type = PHY_RADIO_SLOT_RX;
-        } else {
-            // All uneven slots are of TX type (Including slot 0)
-            inst->tdma_scheduler.slot[i].type = PHY_RADIO_SLOT_TX;
-        }
-    }
+    // TODO not sure if this really is necessary..
+    // Set the mandatory peripheral sync RX slot
+    inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].type = PHY_RADIO_SLOT_RX;
 
     return PHY_RADIO_SUCCESS;
 }
@@ -1444,6 +1429,11 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
         return res;
     }
 
+    // Reset the TdmaScheduler
+    if ((res = resetTdmaScheduler(&inst->tdma_scheduler)) != PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
     // Clear the packet queue in all slots and notify that the message has been canceled
     if ((res = clearAndNotifyPacketQueue(inst, &inst->tdma_scheduler)) != STATIC_QUEUE_SUCCESS) {
         return res;
@@ -1503,6 +1493,10 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     if ((res = resetTdmaScheduler(&inst->tdma_scheduler)) != PHY_RADIO_SUCCESS) {
         return res;
     }
+
+    // The central device allways occupies one slot as TX to send syncs
+    inst->tdma_scheduler.slot[PHY_RADIO_CENTRAL_TX_SLOT].type = PHY_RADIO_SLOT_TX;
+    inst->tdma_scheduler.slot[PHY_RADIO_CENTRAL_TX_SLOT].num_frames_as_type = PHY_RADIO_INFINITE_SLOT_TYPE;
 
     // Start broadcasting a sync message to enable other units to adjust their clocks
     res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_CENTRAL);
@@ -1587,9 +1581,15 @@ static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet) {
     }
 
     // Make sure that it is valid to send on the target slot
-    if (inst->tdma_scheduler.slot[packet->slot].type != PHY_RADIO_SLOT_TX) {
+    if (inst->tdma_scheduler.slot[packet->slot].type == PHY_RADIO_SLOT_RX) {
         return PHY_RADIO_INVALID_SLOT;
     }
+
+    // Set this slot as TX
+    inst->tdma_scheduler.slot[packet->slot].type = PHY_RADIO_SLOT_TX;
+    // TODO how long should a slot be TX, what if the packet overflows to the next frame?
+    // Set that this slot is TX until the packet is sent
+    inst->tdma_scheduler.slot[packet->slot].num_frames_as_type = PHY_RADIO_INFINITE_SLOT_TYPE;
 
     // Prepend the packet type
     uint8_t phy_pkt_type = packet->type << PHY_RADIO_PACKET_TYPE_SHIFT;
@@ -1632,6 +1632,25 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
         case PHY_RADIO_MODE_SCAN:
             return PHY_RADIO_INVALID_MODE;
     }
+
+    return PHY_RADIO_SUCCESS;
+}
+
+int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, int16_t num_frames) {
+    if (inst == NULL) {
+        return PHY_RADIO_NULL_ERROR;
+    }
+
+    // Check if the slot is a valid value
+    if (slot > PHY_RADIO_NUM_SLOTS) {
+        return PHY_RADIO_INVALID_SLOT;
+    }
+
+    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
+
+    // Configure the slot
+    tdma_scheduler->slot[slot].num_frames_as_type = num_frames;
+    tdma_scheduler->slot[slot].type = PHY_RADIO_SLOT_RX;
 
     return PHY_RADIO_SUCCESS;
 }

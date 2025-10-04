@@ -67,6 +67,18 @@ typedef struct {
 
 static myInstance_t my_instance = {0};
 
+static phyRadioFrameConfig_t frame_config = {
+    .frame_length_us = PHY_RADIO_FRAME_TIME_US,
+    .num_slots       = PHY_RADIO_NUM_SLOTS_IN_FRAME,
+    .slots = {
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+    },
+    .end_guard = 0,
+};
+
 // Perform initialisation
 int pico_led_init(void) {
     // A device like Pico that uses a GPIO for the LED will define PICO_DEFAULT_LED_PIN
@@ -167,8 +179,9 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            // Called if a central device has successfully sent a sync
            inst->test_led_state = !inst->test_led_state;
            pico_set_led(inst->test_led_state);
-           // The information regarding what slot to send on is provided in the sync state
-           inst->phy_pkt.slot = sync_state->tx_slot_number;
+           // The information regarding what slot is used as sync slot provided in the sync state
+           // We will send out packets on the same slot for now
+           inst->phy_pkt.slot = sync_state->sync_slot_number;
            break;
         case PHY_RADIO_FIRST_SYNC:
            // Successfully synchronized with a central device
@@ -224,8 +237,30 @@ int main()
         device_error();
     }
 
+    // Configure TDMA frame, note that the casting from const to non const here is not great
+    if ((res = phyRadioSetFrameStructure(&my_instance.phy_radio_inst, (phyRadioFrameConfig_t*)(&frame_config))) != PHY_RADIO_SUCCESS) {
+        LOG("RADIO FRAME CONFIG FAILED! %i\n", res);
+        device_error();
+    }
+
     // Set phy radio mode
     if ((res = phyRadioSetCentralMode(&my_instance.phy_radio_inst)) != PHY_RADIO_SUCCESS) {
+        LOG("RADIO SET MODE FAILED! %i\n", res);
+        device_error();
+    }
+
+    // Receive on slot 1-3 indefinitely
+    if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 1, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
+        LOG("RADIO SET MODE FAILED! %i\n", res);
+        device_error();
+    }
+
+    if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 2, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
+        LOG("RADIO SET MODE FAILED! %i\n", res);
+        device_error();
+    }
+
+    if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 3, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
         LOG("RADIO SET MODE FAILED! %i\n", res);
         device_error();
     }

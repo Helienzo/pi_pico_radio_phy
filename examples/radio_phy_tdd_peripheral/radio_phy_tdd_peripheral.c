@@ -67,6 +67,18 @@ typedef struct {
 
 static myInstance_t my_instance = {0};
 
+static phyRadioFrameConfig_t frame_config = {
+    .frame_length_us = PHY_RADIO_FRAME_TIME_US,
+    .num_slots       = PHY_RADIO_NUM_SLOTS_IN_FRAME,
+    .slots = {
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+    },
+    .end_guard = 0,
+};
+
 // Perform initialisation
 int pico_led_init(void) {
     // A device like Pico that uses a GPIO for the LED will define PICO_DEFAULT_LED_PIN
@@ -164,16 +176,31 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
         case PHY_RADIO_SYNC_SENT:
            // Called if a central device has successfully sent a sync
            break;
-        case PHY_RADIO_FIRST_SYNC:
+        case PHY_RADIO_FIRST_SYNC: {
            // Successfully synchronized with a central device
            inst->test_led_state = true;
            pico_set_led(inst->test_led_state);
-           // The information regarding what slot to send on is provided in the sync state
-           inst->phy_pkt.slot = sync_state->tx_slot_number;
+           // The information regarding what slot is used as sync RX slot is provided in the sync state
+           // We will receive on the sync slot and send on slot 1
+           inst->phy_pkt.slot = 3;
+
+           int32_t res = PHY_RADIO_SUCCESS;
+           // Receive on slot 1 indefinetly
+           if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 1, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
+               LOG("RADIO SET MODE FAILED! %i\n", res);
+               device_error();
+           }
+
+           // Receive on slot 1 indefinetly
+           if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 2, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
+               LOG("RADIO SET MODE FAILED! %i\n", res);
+               device_error();
+           }
+
            // Set peripheral mode
            retval = PHY_RADIO_CB_SET_PERIPHERAL;
            LOG("SYNCHRONIZED!\n");
-           break;
+           } break;
         case PHY_RADIO_RE_SYNC:
            // Called every time a new sync is heard,
            inst->test_led_state = !inst->test_led_state;
@@ -238,6 +265,11 @@ int main()
     // Initialize the phy radio
     if ((res = phyRadioInit(&my_instance.phy_radio_inst, &my_instance.phy_interface, RADIO_MY_ADDR)) != PHY_RADIO_SUCCESS) {
         LOG("RADIO INIT FAILED! %i\n", res);
+        device_error();
+    }
+
+    if ((res = phyRadioSetFrameStructure(&my_instance.phy_radio_inst, &frame_config)) != PHY_RADIO_SUCCESS) {
+        LOG("RADIO FRAME CONFIG FAILED! %i\n", res);
         device_error();
     }
 

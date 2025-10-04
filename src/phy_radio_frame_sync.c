@@ -129,7 +129,6 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
         // Calculate the offset between our superslot and the central super slot
         int64_t slot_diff = (int64_t)toa - (int64_t)inst->slot_start_time;
         // Do a sanity check of the diff value
-        // TODO this has to be a dynamic value since not all slots are the same lengths
         if (slot_diff < PHY_RADIO_SLOT_TIME_US && slot_diff > -PHY_RADIO_SLOT_TIME_US) {
             // 1) compute the per‐slot normalized error
             float offset_us = (float)(slot_diff);
@@ -162,6 +161,7 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
             LOG("E %i\n", (int32_t)control);
             LOG_DEBUG("SLOT DURATION:   %i us\n", (int32_t)inst->frame_duration);
         }
+    // TODO this else statement should be an elif SCAN to clarify
     } else {
         // We know how long it took to send the sync message, but we need to compensate for the guard infront of it
         sync_time += PHY_RADIO_SLOT_GUARD_TIME_US;
