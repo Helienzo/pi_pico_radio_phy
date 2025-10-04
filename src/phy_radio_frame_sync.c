@@ -93,15 +93,17 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
         uint16_t slot_pos = frame_index % PHY_RADIO_NUM_TICKS_IN_SLOT;
         switch (slot_pos) {
             case 0: {
-               inst->slot_start_time = time_us_64();
-               inst->slot_index++;
-               frame_event     = FRAME_SYNC_SLOT_GUARD_EVENT;
-               interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
+                // This markes the end of the guard and start of the active slot part
+                frame_event     = FRAME_SYNC_SLOT_START_EVENT;
+                interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
             } break;
-            case 1:
-               frame_event     = FRAME_SYNC_SLOT_START_EVENT;
-               interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
-               break;
+            case 1: {
+                // This marks the start of the slot guard
+                inst->slot_start_time = time_us_64();
+                inst->slot_index++;
+                frame_event     = FRAME_SYNC_SLOT_GUARD_EVENT;
+                interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
+            } break;
             default:
                 // Should never happen
                 break;
