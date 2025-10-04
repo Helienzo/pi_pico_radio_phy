@@ -335,8 +335,6 @@ int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTickTimer
     timer_data.tick_timer_active      = true;
     timer_data.frame_timer_active     = true;
 
-    gpio_put(HAL_RADIO_PIN_TX_RX, 0);
-
     return PHY_RADIO_TIMER_SUCCESS;
 }
 
