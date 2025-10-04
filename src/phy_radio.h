@@ -204,11 +204,6 @@ struct phyRadioInterface {
     phyRadioSyncStateCb_t sync_state_cb;
 };
 
-// Frame structue
-typedef struct {
-    uint8_t dummy;
-} phyRadioFrameStructure_t;
-
 // Slot item
 typedef struct {
     phyRadioPacket_t  *pkt;
@@ -340,7 +335,7 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
  * Inpuut: New frame structure
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameStructure_t *frame);
+int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame);
 
 /**
  * Send a message on the next avialable slot.

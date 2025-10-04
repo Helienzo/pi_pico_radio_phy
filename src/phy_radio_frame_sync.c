@@ -56,17 +56,6 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
 static int32_t new_frame_callback(phyRadioTimer_t *interface);
 static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t index);
 
-static uint16_t ticks[] = {PHY_RADIO_SLOT_GUARD_TIME_US, PHY_RADIO_ACTIVE_SLOT_TIME_US,
-                           PHY_RADIO_SLOT_GUARD_TIME_US, PHY_RADIO_ACTIVE_SLOT_TIME_US,
-                           PHY_RADIO_SLOT_GUARD_TIME_US, PHY_RADIO_ACTIVE_SLOT_TIME_US,
-                           PHY_RADIO_SLOT_GUARD_TIME_US, PHY_RADIO_ACTIVE_SLOT_TIME_US,
-                           PHY_RADIO_SLOT_GUARD_TIME_US, PHY_RADIO_ACTIVE_SLOT_TIME_US};
-
-static phyRadioTimerConfig_t timer_conf = {
-    .num_ticks     = PHY_RADIO_NUM_TICKS_IN_FRAME,
-    .tick_sequence = ticks,
-};
-
 // This timer triggers at the start of a new frame, this marks the start of the frames first guard period where the radio can be managed
 static int32_t new_frame_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
@@ -141,7 +130,7 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
         // TODO this has to be a dynamic value since not all slots are the same lengths
         if (slot_diff < PHY_RADIO_SLOT_TIME_US && slot_diff > -PHY_RADIO_SLOT_TIME_US) {
             // 1) compute the per‐slot normalized error
-            float offset_us = (float)slot_diff;
+            float offset_us = (float)(slot_diff);
             float err = (offset_us - (float)sync_time);
 
             // 2) P term
@@ -168,7 +157,7 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
             }
 
             LOG_V_DEBUG("Sync time %u, diff %i\n", sync_time, (int32_t)slot_diff);
-            LOG("Duriation Error: %i us\n", (int32_t)err);
+            LOG("E %i\n", (int32_t)control);
             LOG_DEBUG("SLOT DURATION:   %i us\n", (int32_t)inst->frame_duration);
         }
     } else {
@@ -307,12 +296,18 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
 int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMode_t mode) {
 
     switch (mode) {
-        case PHY_RADIO_FRAME_SYNC_MODE_IDLE:
-             inst->mode = mode;
-            break;
+        case PHY_RADIO_FRAME_SYNC_MODE_IDLE: {
+            // Cancel any active timer
+            int32_t res = phyRadioTimerCancelAll(&inst->radio_timer);
+            if (res != PHY_RADIO_TIMER_SUCCESS) {
+                LOG("Timer error! %i\n", res);
+                return res;
+            }
+            inst->mode = mode;
+            } break;
         case PHY_RADIO_FRAME_SYNC_MODE_CENTRAL:
              inst->mode = mode;
-             return phyRadioTimerStartCombinedTimer(&inst->radio_timer, tick_timer_callback, new_frame_callback, PHY_RADIO_FRAME_TIME_US, PHY_RADIO_SLOT_GUARD_TIME_US, 0);
+             return phyRadioTimerStartCombinedTimer(&inst->radio_timer, tick_timer_callback, new_frame_callback, inst->frame_config->frame_length_us, PHY_RADIO_SLOT_GUARD_TIME_US, 0);
         case PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL:
              inst->mode = mode;
              break;
@@ -331,17 +326,21 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
-// TODO the name of this should be time in slot
-int32_t phyRadioFrameSyncTimeLeftInFrame(phyRadioFrameSync_t *inst) {
+int32_t phyRadioFrameSyncTimeLeftInSlot(phyRadioFrameSync_t *inst, uint8_t slot) {
+    if (slot >= inst->frame_config->num_slots) {
+        return PHY_RADIO_FRAME_SYNC_SLOT_ERROR;
+    }
+
     // Compute how long we have been in this slot, and check that we have not overflowed
     uint64_t time_in_slot = time_us_64() - inst->slot_start_time;
+    uint16_t slot_length_us = inst->frame_config->slots[slot].slot_length_us;
 
-    // TODO this must be dynamic as the slot time varies. But it is not connected to the frame length.
-    if (time_in_slot > PHY_RADIO_ACTIVE_SLOT_TIME_US) {
+    if (time_in_slot > slot_length_us) {
         return PHY_RADIO_FRAME_SYNC_FRAME_OVERFLOW;
     }
 
-    return PHY_RADIO_ACTIVE_SLOT_TIME_US - time_in_slot;
+    // Compute difference between current active slot and the complete length of the slot
+    return slot_length_us - time_in_slot;
 }
 
 int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSyncInit_t *init_struct) {
@@ -396,13 +395,44 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
         return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
     }
     
-    timer_result = phyRadioTimerSetConfig(&inst->radio_timer, &timer_conf);
-    if (timer_result != PHY_RADIO_TIMER_SUCCESS) {
-        LOG("Timer set config failed: %d\n", timer_result);
-        return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
-    }
+    inst->timer_config.num_ticks     = 0;
+    inst->timer_config.tick_sequence = NULL;
 
     LOG_DEBUG("Frame sync initialized\n");
-    
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
+int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t *frame) {
+    if (inst == NULL || frame == NULL) {
+        return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
+    }
+
+    // The timer MUST be turned of before changing any parameters
+    if (inst->mode != PHY_RADIO_FRAME_SYNC_MODE_IDLE) {
+        return PHY_RADIO_FRAME_SYNC_MODE_ERROR;
+    }
+
+    uint16_t tick_index = 0;
+    // THIS IS THE ONLY FUNCTION THAT SHOULD MODIFY THE _frame_ticks parameter
+    for (uint32_t i = 0; i < frame->num_slots; i++) {
+        inst->_frame_ticks[tick_index] = frame->slots[i].slot_start_guard_us;
+        tick_index++;
+        inst->_frame_ticks[tick_index] = frame->slots[i].slot_length_us;
+        tick_index++;
+    }
+
+    // Prepare configuration
+    inst->timer_config.num_ticks = tick_index;
+    inst->timer_config.tick_sequence = inst->_frame_ticks;
+    inst->frame_config = frame;
+
+    int32_t res = phyRadioTimerSetConfig(&inst->radio_timer, &inst->timer_config);
+
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
+        LOG("Timer config failed: %i\n", res);
+        return res;
+    }
+
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }

@@ -29,6 +29,7 @@ extern "C" {
 #endif
 
 #include "c_buffer.h"
+#include "pico/stdlib.h"
 
 // Packet sizes
 #define PHY_RADIO_SENDER_ADDR_SIZE    (1)
@@ -104,6 +105,23 @@ struct phyRadioPacket {
     uint8_t    addr; // Destination when sending, Sender when receiving
     uint8_t    slot; // Destination slot when sending, What slot it was received on when receiving
 };
+
+typedef struct {
+    uint16_t slot_start_guard_us; // Guard time at start of slot
+    uint16_t slot_length_us;      // Active part of the slot (e.g. TX time)
+    uint16_t slot_end_guard_us;   // Guard time at end of slot TODO UNSUPORTED
+} phyRadioSlotConfig_t;
+
+typedef struct {
+    uint32_t frame_length_us; // Complete time frame
+
+    // Slot allocation for the frame
+    phyRadioSlotConfig_t slots[PHY_RADIO_NUM_SLOTS_IN_FRAME];
+
+    uint16_t num_slots; // Total number of slots in the frame
+
+    uint16_t end_guard; // Special guard at the end of the slot
+} phyRadioFrameConfig_t;
 
 typedef enum {
     // This is a NOPE event

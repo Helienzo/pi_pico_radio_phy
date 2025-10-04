@@ -63,6 +63,8 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_SUCCESS          = 0,
     PHY_RADIO_FRAME_SYNC_NULL_ERROR       = -22001,
     PHY_RADIO_FRAME_SYNC_GEN_ERROR        = -22002,
+    PHY_RADIO_FRAME_SYNC_SLOT_ERROR       = -22003,
+    PHY_RADIO_FRAME_SYNC_MODE_ERROR       = -22004,
     PHY_RADIO_FRAME_SYNC_FRAME_OVERFLOW   = -22015,
 } phyRadioFrameSyncErr_t;
 
@@ -118,9 +120,14 @@ typedef struct {
     cBuffer_t           sync_message_buf;
     phyRadioPacket_t    sync_packet;
     
+    // Frame management
+    phyRadioFrameConfig_t *frame_config; // Pointer to the current frame config
+    uint16_t               _frame_ticks[PHY_RADIO_NUM_TICKS_IN_FRAME]; // Frame ticks, used by the timer
+
     // Timer management
-    phyRadioTimer_t     radio_timer;
-    volatile uint8_t    timer_interrupt;
+    phyRadioTimer_t        radio_timer;
+    phyRadioTimerConfig_t  timer_config;
+    volatile uint8_t       timer_interrupt;
 
     // Frame sync management
     // The actuall time it takes to send a sync message
@@ -179,17 +186,24 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
  
 /**
  * Check time remaining in frame
- * 
-// TODO the name of this should be time in slot
+ * Input: Frame sync instance
+ * Input: Slot
+ * Returns: phyRadioFrameSyncErr_t
  */
-int32_t phyRadioFrameSyncTimeLeftInFrame(phyRadioFrameSync_t *inst);
+int32_t phyRadioFrameSyncTimeLeftInSlot(phyRadioFrameSync_t *inst, uint8_t slot);
 
 /**
  * Process function call
  */
 int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst);
 
-//int32_t phyRadioFrameSync(phyRadioFrameSync_t *inst)
+/**
+ * Configure the frame
+ * Input: Frame sync instance
+ * Input: Frame configuration
+ * Returns: phyRadioFrameSyncErr_t
+ */
+int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t *frame);
 
 #ifdef __cplusplus
 }

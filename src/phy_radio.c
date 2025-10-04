@@ -370,7 +370,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     int32_t packet_time_us = packetTimeEstimate(inst, (uint8_t)num_bytes_to_send);
 
     // Calculate how much time we have remaining in the slot excluding the guard period
-    int32_t time_remaining_in_slot = phyRadioFrameSyncTimeLeftInFrame(&tdma_scheduler->frame_sync);
+    int32_t time_remaining_in_slot = phyRadioFrameSyncTimeLeftInSlot(&tdma_scheduler->frame_sync, tdma_scheduler->current_slot);
 
     // Check the result, negative indicates errors
     if (time_remaining_in_slot < 0) {
@@ -1643,4 +1643,12 @@ int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot) {
 
     // Clear the slot and inform higher layers that the packets are lost
     return clearAndNotifyPacketQueueInSlot(inst, &inst->tdma_scheduler, slot);
+}
+
+int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame) {
+    if (inst == NULL) {
+        return PHY_RADIO_NULL_ERROR;
+    }
+
+    return phyRadioFrameSyncSetStructure(&inst->tdma_scheduler.frame_sync, frame);
 }

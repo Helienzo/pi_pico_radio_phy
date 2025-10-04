@@ -134,6 +134,14 @@ int32_t phyRadioTimerUpdateCombinedTimer(phyRadioTimer_t *inst, float new_period
 int32_t phyRadioTimerStopCombinedTimer(phyRadioTimer_t *inst);
 
 /**
+ * Convert tick timer ticks to us
+ * Input: phyRadioTimer instance
+ * Input: Number of ticks
+ * Returns: phyRadioTimerErr_t or ticks
+ */
+int32_t phyRadioTickTimerTickToUs(phyRadioTimer_t *inst, uint16_t ticks);
+
+/**
  * Init a task timer instance
  * Input: phyRadioTaskTimer instance
  * Returns: phyRadioTimerErr_t

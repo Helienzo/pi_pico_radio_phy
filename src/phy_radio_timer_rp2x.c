@@ -308,6 +308,7 @@ int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTickTimer
     timer_data.ticks   = ticks;
 
     // Start PWM counter with offset
+    pwm_set_counter(PHY_RADIO_TIMER_PWM_SLICE, 0); // Make sure to reset the counter once
     pwm_set_wrap(PHY_RADIO_TIMER_PWM_SLICE, ticks);
     uint32_t frame_offset_ticks = (uint32_t)(frame_offset_us * timer_data.clk_converter);
     pwm_set_counter(PHY_RADIO_TIMER_PWM_SLICE, frame_offset_ticks);
@@ -374,4 +375,14 @@ int32_t phyRadioTimerUpdateCombinedTimer(phyRadioTimer_t *inst, float new_period
     pwm_set_wrap(PHY_RADIO_TIMER_PWM_SLICE, ticks);
 
     return PHY_RADIO_TIMER_SUCCESS;
+}
+
+int32_t phyRadioTickTimerTickToUs(phyRadioTimer_t *inst, uint16_t ticks) {
+    if (inst == NULL) {
+        return PHY_RADIO_TIMER_NULL_ERROR;
+    }
+
+    float us = inst->_private->tick_inv_clk_converter * ((float)ticks);
+
+    return (int32_t)us;
 }
