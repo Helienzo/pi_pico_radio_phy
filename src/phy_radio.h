@@ -87,7 +87,7 @@ extern "C" {
 #endif /* PHY_RADIO_DEFAULT_CHANNEL */
 
 #ifndef PHY_RADIO_BIT_RATE
-#define PHY_RADIO_BIT_RATE (HAL_RADIO_BITRATE_150)
+#define PHY_RADIO_BIT_RATE (HAL_RADIO_BITRATE_300)
 #endif /* PHY_RADIO_BIT_RATE */
 
 #ifndef PHY_RADIO_DEFAULT_TX_POWER_DBM
@@ -239,8 +239,9 @@ typedef struct {
     uint16_t           packet_delay_time_us; // The time it will take for the receiver to read and decode this packet
 
     // Superframe management
-    uint32_t superslot_counter; // Keeping track of number of slots in a superframe
-    uint32_t sync_counter;      // Keeping track of frames since last sync
+    uint16_t frame_counter; // Keeping track of number of slots in a superframe
+    uint16_t sync_interval; // Keeping track of number of slots in a superframe
+    uint16_t sync_counter;  // Keeping track of frames since last sync
     uint32_t hal_bitrate;
 
     // Module responsible for syncronizing internal timers

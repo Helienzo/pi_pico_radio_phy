@@ -52,8 +52,12 @@ extern "C" {
 #define PHY_RADIO_SLOT_GUARD_TIME_US (200)
 #endif /* PHY_RADIO_SLOT_GUARD_TIME_US */
 
+#ifndef PHY_RADIO_ACTIVE_SYNC_SLOT_TIME_US 
+#define PHY_RADIO_ACTIVE_SYNC_SLOT_TIME_US (1500)
+#endif /* PHY_RADIO_ACTIVE_SYNC_SLOT_TIME_US */
+
 #ifndef PHY_RADIO_ACTIVE_SLOT_TIME_US 
-#define PHY_RADIO_ACTIVE_SLOT_TIME_US (7800)
+#define PHY_RADIO_ACTIVE_SLOT_TIME_US (6850)
 #endif /* PHY_RADIO_ACTIVE_SLOT_TIME_US */
 
 #ifndef PHY_RADIO_NUM_TICKS_IN_SLOT
@@ -66,7 +70,7 @@ extern "C" {
 
 // Frame end guard
 #ifndef PHY_RADIO_NUM_SLOTS_IN_FRAME
-#define PHY_RADIO_NUM_SLOTS_IN_FRAME (4)
+#define PHY_RADIO_NUM_SLOTS_IN_FRAME (3)
 #endif /* PHY_RADIO_NUM_SLOTS_IN_FRAME */
 
 #ifndef PHY_RADIO_FRAME_GUARD_US
@@ -119,6 +123,8 @@ typedef struct {
     phyRadioSlotConfig_t slots[PHY_RADIO_NUM_SLOTS_IN_FRAME];
 
     uint16_t num_slots; // Total number of slots in the frame
+
+    uint16_t sync_interval; // How often to send the sync
 
     uint16_t end_guard; // Special guard at the end of the slot
 } phyRadioFrameConfig_t;

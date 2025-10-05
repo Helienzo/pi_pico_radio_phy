@@ -71,12 +71,12 @@ static phyRadioFrameConfig_t frame_config = {
     .frame_length_us = 0, //  This field is automatically updated when the frame is configured
     .num_slots       = PHY_RADIO_NUM_SLOTS_IN_FRAME,
     .slots = {
-        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
-        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SYNC_SLOT_TIME_US, .slot_end_guard_us = 0,},
         {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
         {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
     },
-    .end_guard = PHY_RADIO_FRAME_GUARD_US,
+    .sync_interval = 8,
+    .end_guard     = PHY_RADIO_FRAME_GUARD_US,
 };
 
 // Perform initialisation
@@ -182,17 +182,11 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            pico_set_led(inst->test_led_state);
            // The information regarding what slot is used as sync RX slot is provided in the sync state
            // We will receive on the sync slot and send on slot 1
-           inst->phy_pkt.slot = 3;
+           inst->phy_pkt.slot = 2;
 
            int32_t res = PHY_RADIO_SUCCESS;
            // Receive on slot 1 indefinetly
            if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 1, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
-               LOG("RADIO SET MODE FAILED! %i\n", res);
-               device_error();
-           }
-
-           // Receive on slot 1 indefinetly
-           if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 2, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
                LOG("RADIO SET MODE FAILED! %i\n", res);
                device_error();
            }
