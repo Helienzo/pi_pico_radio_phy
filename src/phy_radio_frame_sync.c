@@ -315,8 +315,8 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
              break;
         case PHY_RADIO_FRAME_SYNC_MODE_SCAN:
                 inst->mode = mode;
-                inst->frame_duration = PHY_RADIO_FRAME_TIME_US;
-                inst->float_frame_duration = (float)PHY_RADIO_FRAME_TIME_US;
+                inst->frame_duration = inst->frame_config->frame_length_us;
+                inst->float_frame_duration = (float)inst->frame_config->frame_length_us;
 
                 // Cancel any active timers
                 return phyRadioTimerCancelAll(&inst->radio_timer);
@@ -381,14 +381,7 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     inst->pkt_sent_time         = 0;
     inst->central_sync_msg_time = 0;
     inst->slot_start_time       = 0;
-    inst->frame_duration         = PHY_RADIO_FRAME_TIME_US;
-    inst->float_frame_duration   = (float)PHY_RADIO_FRAME_TIME_US;
 
-    inst->error_prev = 0.0f;
-    inst->integral = 0.0f;
-
-    // Calculate a best effort sync message time estimate to initialize this value
-    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, init_struct->hal_bitrate, PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE);
 
     // Initialize timer (owned by this module)
     int32_t timer_result = phyRadioTimerInit(&inst->radio_timer, PHY_RADIO_FRAME_TIME_US, PHY_RADIO_SLOT_TIME_US);
@@ -396,7 +389,14 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
         LOG("Timer init failed: %d\n", timer_result);
         return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
     }
-    
+
+    inst->error_prev = 0.0f;
+    inst->integral = 0.0f;
+
+    // Calculate a best effort sync message time estimate to initialize this value
+    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, init_struct->hal_bitrate, PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE);
+
+    inst->frame_config               = NULL;
     inst->timer_config.num_ticks     = 0;
     inst->timer_config.tick_sequence = NULL;
 
@@ -410,23 +410,37 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
         return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
     }
 
+    // TODO we could deinit/reinit the timer instance here with new parameters
+
     // The timer MUST be turned of before changing any parameters
     if (inst->mode != PHY_RADIO_FRAME_SYNC_MODE_IDLE) {
         return PHY_RADIO_FRAME_SYNC_MODE_ERROR;
     }
 
     uint16_t tick_index = 0;
+    uint32_t frame_length_us = 0;
     // THIS IS THE ONLY FUNCTION THAT SHOULD MODIFY THE _frame_ticks parameter
     for (uint32_t i = 0; i < frame->num_slots; i++) {
         inst->_frame_ticks[tick_index] = frame->slots[i].slot_start_guard_us;
         tick_index++;
         inst->_frame_ticks[tick_index] = frame->slots[i].slot_length_us;
         tick_index++;
+
+        // Sum the elements in the frame
+        frame_length_us += frame->slots[i].slot_start_guard_us;
+        frame_length_us += frame->slots[i].slot_length_us;
     }
+
+    // Add the end guard
+    frame_length_us += frame->end_guard;
+    frame->frame_length_us = frame_length_us;
 
     // Prepare configuration
     inst->timer_config.num_ticks = tick_index;
     inst->timer_config.tick_sequence = inst->_frame_ticks;
+    inst->frame_duration         = frame->frame_length_us;
+    inst->float_frame_duration   = (float)frame->frame_length_us;
+
     inst->frame_config = frame;
 
     int32_t res = phyRadioTimerSetConfig(&inst->radio_timer, &inst->timer_config);

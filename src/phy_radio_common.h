@@ -49,7 +49,7 @@ extern "C" {
 
 // Slot times in us
 #ifndef PHY_RADIO_SLOT_GUARD_TIME_US
-#define PHY_RADIO_SLOT_GUARD_TIME_US (400)
+#define PHY_RADIO_SLOT_GUARD_TIME_US (200)
 #endif /* PHY_RADIO_SLOT_GUARD_TIME_US */
 
 #ifndef PHY_RADIO_ACTIVE_SLOT_TIME_US 

@@ -68,7 +68,7 @@ typedef struct {
 static myInstance_t my_instance = {0};
 
 static phyRadioFrameConfig_t frame_config = {
-    .frame_length_us = PHY_RADIO_FRAME_TIME_US,
+    .frame_length_us = 0, //  This field is automatically updated when the frame is configured
     .num_slots       = PHY_RADIO_NUM_SLOTS_IN_FRAME,
     .slots = {
         {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
@@ -76,7 +76,7 @@ static phyRadioFrameConfig_t frame_config = {
         {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
         {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
     },
-    .end_guard = 0,
+    .end_guard = PHY_RADIO_FRAME_GUARD_US,
 };
 
 // Perform initialisation
