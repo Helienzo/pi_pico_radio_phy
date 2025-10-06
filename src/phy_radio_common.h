@@ -70,7 +70,7 @@ extern "C" {
 
 // Frame end guard
 #ifndef PHY_RADIO_NUM_SLOTS_IN_FRAME
-#define PHY_RADIO_NUM_SLOTS_IN_FRAME (3)
+#define PHY_RADIO_NUM_SLOTS_IN_FRAME (4)
 #endif /* PHY_RADIO_NUM_SLOTS_IN_FRAME */
 
 #ifndef PHY_RADIO_FRAME_GUARD_US

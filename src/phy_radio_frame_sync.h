@@ -79,6 +79,8 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_MODE_CENTRAL     = 1,
     PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL  = 2,
     PHY_RADIO_FRAME_SYNC_MODE_SCAN        = 3,
+    PHY_RADIO_FRAME_TRANS_TO_PERIPHERAL   = 4,
+    PHY_RADIO_FRAME_TRANS_TO_CENTRAL      = 5,
 } phyRadioFrameSyncMode_t;
 
 typedef enum {

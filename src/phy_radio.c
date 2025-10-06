@@ -1467,6 +1467,56 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
     return PHY_RADIO_SUCCESS;
 }
 
+int32_t phyRadioTransitionPeripheralToCentral(phyRadio_t *inst) {
+    // The central device allways occupies one slot as TX to send syncs
+    inst->tdma_scheduler.slot[PHY_RADIO_CENTRAL_TX_SLOT].type = PHY_RADIO_SLOT_TX;
+    inst->tdma_scheduler.slot[PHY_RADIO_CENTRAL_TX_SLOT].num_frames_as_type = PHY_RADIO_INFINITE_SLOT_TYPE;
+
+    inst->sync_state.sync_slot_number = PHY_RADIO_CENTRAL_TX_SLOT;
+    inst->sync_state.central_address = inst->my_address;
+
+    // Start broadcasting a sync message to enable other units to adjust their clocks
+    int32_t res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_TRANS_TO_CENTRAL);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
+        LOG_TIMER_ERROR("Frame sync Error %i\n", res);
+        return res;
+    }
+
+    inst->sync_state.mode = PHY_RADIO_MODE_CENTRAL;
+
+    return PHY_RADIO_SUCCESS;
+}
+
+int32_t phyRadioTransitionCentralToPeripheral(phyRadio_t *inst, uint8_t new_central_addr) {
+    if (inst == NULL) {
+        return PHY_RADIO_NULL_ERROR;
+    }
+
+    // We can only transition if we are in the Central mode
+    if (inst->sync_state.mode != PHY_RADIO_MODE_CENTRAL) {
+        return PHY_RADIO_INVALID_MODE;
+    }
+
+
+    // A peripheral device allways occupies one slot as RX to receive syncs
+    inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].type = PHY_RADIO_SLOT_RX;
+    inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].num_frames_as_type = PHY_RADIO_INFINITE_SLOT_TYPE;
+
+    inst->sync_state.sync_slot_number = PHY_RADIO_PERIPHERAL_RX_SLOT;
+    inst->sync_state.central_address = new_central_addr;
+
+    // Change the frame sync mode
+    int32_t res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_TRANS_TO_PERIPHERAL);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
+        LOG_TIMER_ERROR("Frame sync Error %i\n", res);
+        return res;
+    }
+
+    inst->sync_state.mode = PHY_RADIO_MODE_PERIPHERAL;
+
+    return PHY_RADIO_SUCCESS;
+}
+
 int32_t phyRadioSetCentralMode(phyRadio_t *inst) {
     if ((inst == NULL) || (inst->interface == NULL)) {
         return PHY_RADIO_NULL_ERROR;

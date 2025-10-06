@@ -26,6 +26,7 @@
 #include "pico/stdlib.h"
 
 typedef enum {
+    PHY_RADIO_TIMER_ACTIVE            = 1,
     PHY_RADIO_TIMER_SUCCESS           = 0,
     PHY_RADIO_TIMER_NULL_ERROR        = -21001,
     PHY_RADIO_TIMER_GEN_ERROR         = -21002,
@@ -140,6 +141,13 @@ int32_t phyRadioTimerStopCombinedTimer(phyRadioTimer_t *inst);
  * Returns: phyRadioTimerErr_t or ticks
  */
 int32_t phyRadioTickTimerTickToUs(phyRadioTimer_t *inst, uint16_t ticks);
+
+/**
+ * Check if the frame timer is active
+ * Input: phyRadioTimer instance
+ * Returns: phyRadioTimerErr_t or ticks
+ */
+int32_t phyRadioTimerIsFrameTimerActive(phyRadioTimer_t *inst);
 
 /**
  * Init a task timer instance

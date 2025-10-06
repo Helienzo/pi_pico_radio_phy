@@ -68,9 +68,6 @@ extern "C" {
 #define PHY_RADIO_MAX_BLOCK_DELAY_TIME_US (20)
 #endif /* PHY_RADIO_MAX_BLOCK_DELAY_TIME_US */
 
-#define PHY_RADIO_SUPERFRAME_TIME_US (PHY_RADIO_SLOT_TIME_US * PHY_RADIO_SUPERFRAME_LEN)
-#define PHY_RADIO_SUPERFRAME_TIME_MS (PHY_RADIO_SUPERFRAME_TIME_US/1000)
-
 // Guard time before the next slot start enables preparing the radio for the next slot
 #define PHY_RADIO_TX_PREPARE_US (PHY_RADIO_SLOT_TIME_US - PHY_RADIO_GUARD_TIME_US)
 
@@ -335,20 +332,19 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst);
  */
 int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
 
-
 /**
  * Transition from Central to Peripheral without losing sync
  * Input: phyRadio instance
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioTransitionCentralToPeripheral(phyRadio_t *inst, uint32_t timeout_ms);
+int32_t phyRadioTransitionCentralToPeripheral(phyRadio_t *inst, uint8_t new_central_addr);
 
 /**
  * Transition from Peripheral to Central without losing sync
  * Input: phyRadio instance
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioTransitionPeripheralToCentral(phyRadio_t *inst, uint32_t timeout_ms);
+int32_t phyRadioTransitionPeripheralToCentral(phyRadio_t *inst);
 
 /**
  * Configure the frame structure used by the phy.

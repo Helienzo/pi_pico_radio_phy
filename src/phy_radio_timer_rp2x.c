@@ -375,6 +375,14 @@ int32_t phyRadioTimerUpdateCombinedTimer(phyRadioTimer_t *inst, float new_period
     return PHY_RADIO_TIMER_SUCCESS;
 }
 
+int32_t phyRadioTimerIsFrameTimerActive(phyRadioTimer_t *inst) {
+    if (timer_data.frame_timer_active) {
+        return PHY_RADIO_TIMER_ACTIVE;
+    }
+
+    return PHY_RADIO_TIMER_SUCCESS;
+}
+
 int32_t phyRadioTickTimerTickToUs(phyRadioTimer_t *inst, uint16_t ticks) {
     if (inst == NULL) {
         return PHY_RADIO_TIMER_NULL_ERROR;

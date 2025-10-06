@@ -158,7 +158,7 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
             }
 
             LOG_V_DEBUG("Sync time %u, diff %i\n", sync_time, (int32_t)slot_diff);
-            LOG("E %i\n", (int32_t)control);
+            LOG_DEBUG("Err %i\n", (int32_t)control);
             LOG_DEBUG("SLOT DURATION:   %i us\n", (int32_t)inst->frame_duration);
         }
     // TODO this else statement should be an elif SCAN to clarify
@@ -321,6 +321,22 @@ int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMod
                 // Cancel any active timers
                 return phyRadioTimerCancelAll(&inst->radio_timer);
             break;
+        case PHY_RADIO_FRAME_TRANS_TO_PERIPHERAL:
+            // To transition from central to peripheral, make sure that the timer is running
+            if (phyRadioTimerIsFrameTimerActive(&inst->radio_timer) == PHY_RADIO_TIMER_ACTIVE) {
+                inst->mode = PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL;
+            } else {
+                return PHY_RADIO_FRAME_SYNC_MODE_ERROR;
+            }
+            break;
+        case PHY_RADIO_FRAME_TRANS_TO_CENTRAL:
+            // To transition from peripheral to central, make sure that the timer is running
+            if (phyRadioTimerIsFrameTimerActive(&inst->radio_timer) == PHY_RADIO_TIMER_ACTIVE) {
+                inst->mode = PHY_RADIO_FRAME_SYNC_MODE_CENTRAL;
+            } else {
+                return PHY_RADIO_FRAME_SYNC_MODE_ERROR;
+            }
+            break;
         default:
             break;
     }
@@ -382,7 +398,6 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     inst->central_sync_msg_time = 0;
     inst->slot_start_time       = 0;
 
-
     // Initialize timer (owned by this module)
     int32_t timer_result = phyRadioTimerInit(&inst->radio_timer, PHY_RADIO_FRAME_TIME_US, PHY_RADIO_SLOT_TIME_US);
     if (timer_result != PHY_RADIO_TIMER_SUCCESS) {
@@ -411,6 +426,14 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     }
 
     // TODO we could deinit/reinit the timer instance here with new parameters
+    phyRadioTimerDeInit(&inst->radio_timer);
+    phyRadioTimerInit(&inst->radio_timer, PHY_RADIO_FRAME_TIME_US, PHY_RADIO_SLOT_TIME_US);
+    // Reset all time keepers
+    inst->pkt_sent_time         = 0;
+    inst->central_sync_msg_time = 0;
+    inst->slot_start_time       = 0;
+
+    inst->mode = PHY_RADIO_FRAME_SYNC_MODE_IDLE;
 
     // The timer MUST be turned of before changing any parameters
     if (inst->mode != PHY_RADIO_FRAME_SYNC_MODE_IDLE) {
