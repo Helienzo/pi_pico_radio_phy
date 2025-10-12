@@ -365,8 +365,11 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     int32_t res = queuePeakOnSlot(tdma_scheduler, slot, &tdma_scheduler->active_item);
     if (res != STATIC_QUEUE_SUCCESS) {
         if (res == STATIC_QUEUE_EMPTY) {
-            // Go to default mode
-            return halRadioCancelTransmit(&inst->hal_radio_inst); // Be in standby during empty TX slots
+            // Be in standby during empty TX slots
+            if ((res = halRadioCancelTransmit(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
+                return res;
+            }
+            return HAL_RADIO_CB_DO_NOTHING;
         }
         return PHY_RADIO_TDMA_ERROR;
     }
@@ -636,6 +639,13 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                 inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].type = PHY_RADIO_SLOT_RX;
                 inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].num_frames_as_type = PHY_RADIO_INFINITE_SLOT_TYPE;
 
+                // Get the custom data sent in the sync packet
+                res = phyRadioFrameGetLatestCustomData(&inst->tdma_scheduler.frame_sync, &inst->sync_state.custom_data);
+                if (res != PHY_RADIO_SUCCESS) {
+                    LOG("SYNC FAILED! %i\n", res);
+                    return res;
+                }
+
                 // Update frame sync state
                 res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL);
                 if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
@@ -679,8 +689,9 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
             // Check if the incomming packet is a new sync from the current central
             // We can only be synced to one central at a time
             if (hal_packet->address == PHY_RADIO_BROADCAST_ADDR &&
-                phy_pkt_type == PHY_RADIO_PKT_INTERNAL_SYNC &&
-                inst->sync_state.central_address == sender_address) {
+                phy_pkt_type == PHY_RADIO_PKT_INTERNAL_SYNC) {// &&
+                // TODO we allow all centrals here, this could create major issues if the central is out of sync
+                //inst->sync_state.central_address == sender_address) {
 
                 // Resync with central 
                 int32_t res = phyRadioFrameSyncNewSync(&inst->tdma_scheduler.frame_sync, phy_header_msb, &new_packet, hal_packet);
@@ -692,6 +703,13 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                 // New superslot detected, new sync detected
                 inst->tdma_scheduler.sync_counter  = 0;
                 inst->tdma_scheduler.frame_counter = 0;
+
+                // Get the custom data sent in the sync packet
+                res = phyRadioFrameGetLatestCustomData(&inst->tdma_scheduler.frame_sync, &inst->sync_state.custom_data);
+                if (res != PHY_RADIO_SUCCESS) {
+                    LOG("SYNC FAILED! %i\n", res);
+                    return res;
+                }
 
                 // Notify that a resync has been received
                 int32_t cb_res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_RE_SYNC, &inst->sync_state);

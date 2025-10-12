@@ -247,10 +247,10 @@ typedef struct {
 
 
 struct phyRadioSyncState {
-    // TODO, pehaps inform about the slot scheme.
     uint32_t       sync_slot_number; // The current phy radio slot used for sync messages
     phyRadioMode_t mode;             // The current phy radio mode
     uint8_t        central_address;  // The address to the central device
+    uint8_t       *custom_data;      // Custom data sent in the sync message
 };
 
 typedef struct {

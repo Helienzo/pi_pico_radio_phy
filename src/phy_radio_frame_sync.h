@@ -70,7 +70,7 @@ typedef enum {
 
 // Sync message and time synchronization
 #define PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE            (1)
-#define PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE)
+#define PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE + PHY_RADIO_SYNC_GEN_DATA_SIZE)
 
 typedef enum {
     PHY_RADIO_FRAME_SYNC_MODE_TIMER_ERROR = -20092,
@@ -121,6 +121,8 @@ typedef struct {
     uint8_t             sync_message_array[PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE + C_BUFFER_ARRAY_OVERHEAD + HAL_RADIO_PACKET_OVERHEAD];
     cBuffer_t           sync_message_buf;
     phyRadioPacket_t    sync_packet;
+    uint8_t             sync_packet_gen_data[PHY_RADIO_SYNC_GEN_DATA_SIZE]; // Contains custom data configurable by higher layers
+    uint8_t             sync_packet_received_gen_data[PHY_RADIO_SYNC_GEN_DATA_SIZE]; // Received custom data
     
     // Frame management
     phyRadioFrameConfig_t *frame_config; // Pointer to the current frame config
@@ -174,6 +176,21 @@ int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket
  * Send the next sync packet
  */
 int32_t phyRadioFrameSyncSendNextSync(phyRadioFrameSync_t *inst);
+
+/**
+ * Set custom data in sync message
+ */
+int32_t phyRadioFrameSyncSetCustomData(phyRadioFrameSync_t *inst, uint8_t *data, uint32_t data_size);
+
+/**
+ * Clear the custom data in sync message
+ */
+int32_t phyRadioFrameSyncClearCustomData(phyRadioFrameSync_t *inst);
+
+/**
+ * Get the latest received custom data
+ */
+int32_t phyRadioFrameGetLatestCustomData(phyRadioFrameSync_t *inst, uint8_t **data);
 
 /**
  * Notify that the sync packet has been sent

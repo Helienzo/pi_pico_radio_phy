@@ -31,6 +31,11 @@ extern "C" {
 #include "c_buffer.h"
 #include "pico/stdlib.h"
 
+
+#ifndef PHY_RADIO_SYNC_GEN_DATA_SIZE
+#define PHY_RADIO_SYNC_GEN_DATA_SIZE (1)
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
+
 // Packet sizes
 #define PHY_RADIO_SENDER_ADDR_SIZE    (1)
 #define PHY_RADIO_PKT_TYPE_SIZE       (1)
@@ -49,7 +54,7 @@ extern "C" {
 
 // Slot times in us
 #ifndef PHY_RADIO_SLOT_GUARD_TIME_US
-#define PHY_RADIO_SLOT_GUARD_TIME_US (200)
+#define PHY_RADIO_SLOT_GUARD_TIME_US (400)
 #endif /* PHY_RADIO_SLOT_GUARD_TIME_US */
 
 #ifndef PHY_RADIO_ACTIVE_SYNC_SLOT_TIME_US 

@@ -43,15 +43,6 @@
 #define UNUSED(x) (void)(x)
 #endif
 
-/**
- *  TODO's
- *   - The timer instance management will not work, two modules cannot own it, and container of does not work on pointers
- *   - Verify the num_of_slots * slot duration, this is module should keep track of full frames or some kind of subframe, unclear so far ..
- *   - Obviously check the functionality
- *   - Check how we start the different modes, central and peripheral ..
- *   - How do we go from scan to peripheral ?
- */
-
 static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t sync_time);
 static int32_t new_frame_callback(phyRadioTimer_t *interface);
 static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t index);
@@ -161,7 +152,7 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
             LOG_DEBUG("Err %i\n", (int32_t)control);
             LOG_DEBUG("SLOT DURATION:   %i us\n", (int32_t)inst->frame_duration);
         }
-    // TODO this else statement should be an elif SCAN to clarify
+    // TODO this else statement could be an elif SCAN to clarify
     } else {
         // We know how long it took to send the sync message, but we need to compensate for the guard infront of it
         sync_time += PHY_RADIO_SLOT_GUARD_TIME_US;
@@ -191,6 +182,12 @@ int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket
     packet_header[0] = (uint8_t)(inst->central_sync_msg_time & PHY_RADIO_SYNC_MSG_TIME_LSB_MASK); // WRITE LSB
     packet_header[1] = phy_pkt_type | (uint8_t)((inst->central_sync_msg_time >> PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT) &
                                                     PHY_RADIO_SYNC_MSG_TIME_MSB_MASK); // Write MSB
+
+    if (PHY_RADIO_SYNC_GEN_DATA_SIZE > 0) {
+        for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
+            cBufferPrependByte(inst->sync_packet.pkt_buffer, inst->sync_packet_gen_data[i]); // This is safe, lets not check retvals
+        }
+    }
 
     // Add the phy and sync packet header
     cBufferPrependByte(inst->sync_packet.pkt_buffer, packet_header[0]); // This is safe, lets not check retvals
@@ -241,7 +238,7 @@ int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_
     int32_t bytes_in_packets = cBufferAvailableForRead(phy_packet->pkt_buffer);
 
     // Double check that the length of the packet is correct, the address and type has already been read
-    if (bytes_in_packets < PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE) {
+    if (bytes_in_packets < (PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE + PHY_RADIO_SYNC_GEN_DATA_SIZE)) {
         return HAL_RADIO_CB_DO_NOTHING;
     }
 
@@ -253,7 +250,11 @@ int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_
 
     int32_t res = syncWithCentral(inst, hal_packet->time, sync_msg_time);
 
-    // TODO should we check result here or just pass it??
+    // This is not very important, do it after the synchronization
+    for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
+        inst->sync_packet_received_gen_data[i] = cBufferReadByte(phy_packet->pkt_buffer);
+    }
+
     return res;
 }
 
@@ -425,9 +426,10 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
         return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
     }
 
-    // TODO we could deinit/reinit the timer instance here with new parameters
+    // Reset the timer
     phyRadioTimerDeInit(&inst->radio_timer);
     phyRadioTimerInit(&inst->radio_timer, PHY_RADIO_FRAME_TIME_US, PHY_RADIO_SLOT_TIME_US);
+
     // Reset all time keepers
     inst->pkt_sent_time         = 0;
     inst->central_sync_msg_time = 0;
@@ -472,6 +474,44 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
         LOG("Timer config failed: %i\n", res);
         return res;
     }
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
+int32_t phyRadioFrameSyncClearCustomData(phyRadioFrameSync_t *inst) {
+    if (inst == NULL) {
+        return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
+    }
+
+    for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
+        inst->sync_packet_gen_data[i] = 0;
+    }
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
+int32_t phyRadioFrameSyncSetCustomData(phyRadioFrameSync_t *inst, uint8_t *data, uint32_t data_size) {
+    if (inst == NULL || data_size == 0) {
+        return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
+    }
+
+    if (data_size > PHY_RADIO_SYNC_GEN_DATA_SIZE) {
+        return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
+    }
+
+    for (uint32_t i = 0; i < data_size; i++) {
+        inst->sync_packet_gen_data[i] = data[i];
+    }
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
+int32_t phyRadioFrameGetLatestCustomData(phyRadioFrameSync_t *inst, uint8_t **data) {
+    if (inst == NULL || data == NULL) {
+        return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
+    }
+
+    *data = inst->sync_packet_received_gen_data;
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
