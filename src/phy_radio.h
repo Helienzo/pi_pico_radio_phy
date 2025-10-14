@@ -204,10 +204,10 @@ struct phyRadioInterface {
 };
 
 // Slot item
-typedef struct {
+struct phyRadioSlotItem {
     phyRadioPacket_t  *pkt;
     staticQueueItem_t node;
-} phyRadioSlotItem_t;
+};
 
 // Complete scheduler structure
 typedef struct {
@@ -390,6 +390,14 @@ int32_t phyRadioScanDuringSlots(phyRadio_t *inst, uint8_t s_slot, uint8_t e_slot
  * Returns: phyRadioErr_t
  */
 int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot);
+
+/**
+ * Remove a queued item from a slot
+ * Input: phyRadio instance
+ * Input: Pointer to the packet to remove (uses pkt->slot to identify the slot)
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioRemoveFromSlot(phyRadio_t *inst, phyRadioPacket_t *pkt);
 
 #ifdef __cplusplus
 }

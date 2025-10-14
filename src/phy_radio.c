@@ -61,7 +61,7 @@ typedef enum {
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot);
 static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phyRadioPacket_t **data);
 static int32_t queuePeakOnSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t**  pkt);
-static int32_t queueJustPopFromSlot(phyRadioTdma_t* scheduler, uint8_t slot);
+static int32_t queueJustPopFromSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t *pkt);
 static int32_t scan_timer_alarm_callback(phyRadioTaskTimer_t *interface);
 static int32_t send_timer_alarm_callback(phyRadioTaskTimer_t *interface);
 static inline int32_t cancelAllTimers(phyRadio_t *inst);
@@ -314,7 +314,8 @@ static int32_t sendOnTimerInterrupt(phyRadio_t *inst, phyRadioTdma_t* tdma_sched
     int32_t res = PHY_RADIO_SUCCESS;
 
     // Make sure to remove the new active item from the slot
-    if ((res = queueJustPopFromSlot(tdma_scheduler, tdma_scheduler->current_slot)) != PHY_RADIO_SUCCESS) {
+    if ((res = queueJustPopFromSlot(tdma_scheduler, tdma_scheduler->current_slot, tdma_scheduler->active_item)) != PHY_RADIO_SUCCESS) {
+        LOG("Int TX err %i\n", res);
         return res;
     }
 
@@ -417,7 +418,6 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     } else {
         // If the wait time is long we need to schedule this as a non blocking task
 
-           
         res = phyRadioTimerCancelTaskTimer(&inst->task_timer);
         if (res != PHY_RADIO_TIMER_SUCCESS) {
             // Perhaps we need Double check that the alarm instance is not taken, we should not have to cancel the timer here..
@@ -442,7 +442,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     }
 
     // Make sure to remove the new active item from the slot
-    if ((res = queueJustPopFromSlot(tdma_scheduler, slot)) != PHY_RADIO_SUCCESS) {
+    if ((res = queueJustPopFromSlot(tdma_scheduler, slot, tdma_scheduler->active_item)) != PHY_RADIO_SUCCESS) {
         return res;
     }
 
@@ -609,10 +609,11 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
     uint8_t phy_pkt_type = (phy_header_msb & PHY_RADIO_PACKET_TYPE_MASK) >> PHY_RADIO_PACKET_TYPE_SHIFT;
 
     phyRadioPacket_t new_packet = {
-        .pkt_buffer = interface->pkt_buffer,
-        .type       = phy_pkt_type,
-        .addr       = sender_address,
-        .slot       = inst->tdma_scheduler.current_slot,
+        .pkt_buffer      = interface->pkt_buffer,
+        .type            = phy_pkt_type,
+        .addr            = sender_address,
+        .slot            = inst->tdma_scheduler.current_slot,
+        ._phy_queue_item = NULL,
     };
 
     // Manage what happens next
@@ -839,6 +840,7 @@ static int32_t queuePutInSlot(phyRadioTdma_t*     scheduler,
     if (result == STATIC_QUEUE_SUCCESS) {
         phyRadioSlotItem_t * next = CONTAINER_OF(item, phyRadioSlotItem_t, node);
         next->pkt = packet;
+        packet->_phy_queue_item = next;
     }
 
     return result;
@@ -856,6 +858,7 @@ static int32_t queuePutFirstInSlot(phyRadioTdma_t*     scheduler,
     if (result == STATIC_QUEUE_SUCCESS) {
         phyRadioSlotItem_t* next = CONTAINER_OF(item, phyRadioSlotItem_t, node);
         next->pkt = packet;
+        packet->_phy_queue_item = next;
     }
 
     return result;
@@ -873,17 +876,20 @@ static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler,
     if (result == STATIC_QUEUE_SUCCESS) {
         phyRadioSlotItem_t* queue_item = CONTAINER_OF(item, phyRadioSlotItem_t, node);
         *pkt = queue_item->pkt;
+        queue_item->pkt->_phy_queue_item = NULL;
     }
 
     return result;
 }
 
-static int32_t queueJustPopFromSlot(phyRadioTdma_t* scheduler,
-                                    uint8_t             slot)
+static int32_t queueJustPopFromSlot(phyRadioTdma_t*   scheduler,
+                                    uint8_t           slot,
+                                    phyRadioPacket_t *pkt)
 {
     // Get the next item from the queue and remove it
     staticQueueItem_t* item;
     int32_t            result = staticQueuePop(&scheduler->slot[slot].static_queue, &item);
+    pkt->_phy_queue_item      = NULL;
     return result;
 }
 
@@ -1442,13 +1448,13 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
         return res;
     }
 
-    // Reset the TdmaScheduler
-    if ((res = resetTdmaScheduler(&inst->tdma_scheduler)) != PHY_RADIO_SUCCESS) {
+    // Clear the packet queue in all slots and notify that the message has been canceled
+    if ((res = clearAndNotifyPacketQueue(inst, &inst->tdma_scheduler)) != STATIC_QUEUE_SUCCESS) {
         return res;
     }
 
-    // Clear the packet queue in all slots and notify that the message has been canceled
-    if ((res = clearAndNotifyPacketQueue(inst, &inst->tdma_scheduler)) != STATIC_QUEUE_SUCCESS) {
+    // Reset the TdmaScheduler
+    if ((res = resetTdmaScheduler(&inst->tdma_scheduler)) != PHY_RADIO_SUCCESS) {
         return res;
     }
 
@@ -1742,4 +1748,45 @@ int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame
     inst->tdma_scheduler.sync_interval = frame->sync_interval;
 
     return phyRadioFrameSyncSetStructure(&inst->tdma_scheduler.frame_sync, frame);
+}
+
+int32_t phyRadioRemoveFromSlot(phyRadio_t *inst, phyRadioPacket_t *pkt) {
+    if (inst == NULL || pkt == NULL) {
+        return PHY_RADIO_NULL_ERROR;
+    }
+
+    if (pkt->slot >= PHY_RADIO_NUM_SLOTS) {
+        return PHY_RADIO_INVALID_SLOT;
+    }
+
+    phyRadioTdma_t *scheduler = &inst->tdma_scheduler;
+
+    // Check if the packet is even in a queue
+    if (pkt->_phy_queue_item == NULL) {
+        // Packet is not queued
+        return PHY_RADIO_SUCCESS;
+    }
+
+    // Use the back-reference to remove from queue
+    int32_t res = staticQueueErase(&scheduler->slot[pkt->slot].static_queue,
+                                   &pkt->_phy_queue_item->node);
+
+    // TODO perhaps we need to do something special here
+    if (scheduler->active_item == pkt) {
+        LOG("ACTIVE packet remove\n");
+    }
+
+    // Notify that the packet send failed
+    if (pkt->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
+        if ((res = inst->interface->sent_cb(inst->interface, pkt, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+            return res;
+        }
+    }
+
+    if (res == STATIC_QUEUE_SUCCESS) {
+        // Clear the back-reference
+        pkt->_phy_queue_item = NULL;
+    }
+
+    return res;
 }

@@ -393,7 +393,8 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     inst->sync_packet.type = PHY_RADIO_PKT_INTERNAL_SYNC;
     inst->sync_packet.addr = PHY_RADIO_BROADCAST_ADDR;
     inst->sync_packet.slot = 0;
-    
+    inst->sync_packet._phy_queue_item = NULL;
+
     // Reset all time keepers
     inst->pkt_sent_time         = 0;
     inst->central_sync_msg_time = 0;

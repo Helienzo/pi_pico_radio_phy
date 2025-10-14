@@ -100,19 +100,21 @@ extern "C" {
 
 typedef struct phyRadio phyRadio_t;
 
-typedef struct phyRadioPacket phyRadioPacket_t;
+typedef struct phyRadioPacket   phyRadioPacket_t;
+typedef struct phyRadioSlotItem phyRadioSlotItem_t;
 
 typedef enum {
-    PHY_RADIO_PKT_DIRECT = 1,        // Direct message heard only by device with matching addr
+    PHY_RADIO_PKT_DIRECT = 1,    // Direct message heard only by device with matching addr
     PHY_RADIO_PKT_BROADCAST,     // Broadcast packet heard by all
     PHY_RADIO_PKT_INTERNAL_SYNC, // Used internaly by the phy layer to syncronize time between devices
 } phyRadioPktType_t;
 
 struct phyRadioPacket {
-    cBuffer_t *pkt_buffer;
-    uint8_t    type; // Phy packet type, phyRadioPktType_t
-    uint8_t    addr; // Destination when sending, Sender when receiving
-    uint8_t    slot; // Destination slot when sending, What slot it was received on when receiving
+    cBuffer_t          *pkt_buffer;
+    uint8_t             type; // Phy packet type, phyRadioPktType_t
+    uint8_t             addr; // Destination when sending, Sender when receiving
+    uint8_t             slot; // Destination slot when sending, What slot it was received on when receiving
+    phyRadioSlotItem_t *_phy_queue_item; // This is a pointer that helps us keep track of where this packet ends up
 };
 
 typedef struct {
