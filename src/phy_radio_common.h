@@ -44,14 +44,6 @@ extern "C" {
 #define PHY_RADIO_MAX_PACKET_SIZE     (HAL_RADIO_MAX_PACKET_SIZE - PHY_RADIO_OVERHEAD_SIZE)
 #define PHY_RADIO_TOTAL_OVERHEAD_SIZE (PHY_RADIO_OVERHEAD_SIZE + HAL_RADIO_PACKET_OVERHEAD)
 
-/**
- * TODO what we want to do next is to remake what is defined as a frame and what is defined as a slot.
- * A frame contains multiple slots. There will be no super slot. Instead the frame will be long and contain X number of slots
- * 
- * To make this work we might have to add a separete conversion time for the guard tick, they should have high precision, but a long frame should not
- * 
- */
-
 // Slot times in us
 #ifndef PHY_RADIO_SLOT_GUARD_TIME_US
 #define PHY_RADIO_SLOT_GUARD_TIME_US (400)
