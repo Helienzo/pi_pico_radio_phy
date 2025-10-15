@@ -83,6 +83,9 @@ typedef enum {
     PHY_RADIO_FRAME_TRANS_TO_CENTRAL      = 5,
 } phyRadioFrameSyncMode_t;
 
+/**
+ * Interrupt events that this module can generate
+ */
 typedef enum {
     PHY_RADIO_FRAME_SYNC_INT_IDLE = 0,
     PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME,
@@ -163,43 +166,68 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
 
 /**
  * This function should be triggered on each new incomming sync packet
+ * Input: phyRadioFrameSync instance
+ * Input: The MSB of the phy header
+ * Input: The parsed sync packet
+ * Input: The raw hal packet
+ * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_msb, phyRadioPacket_t *phy_packet, halRadioPackage_t* hal_packet);
 
 /**
  * Queue the next sync packet
+ * Input: phyRadioFrameSync instance
+ * Input: Pointer that is populated with the sync packet
+ * Returns: phyRadioFrameSyncErr_t
  */
 
 int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket_t **sync_packet);
 
 /**
  * Send the next sync packet
+ * Input: phyRadioFrameSync instance
+ * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncSendNextSync(phyRadioFrameSync_t *inst);
 
 /**
  * Set custom data in sync message
+ * Input: phyRadioFrameSync instance
+ * Input: Pointer to data
+ * Input: Size of data in bytes
+ * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncSetCustomData(phyRadioFrameSync_t *inst, uint8_t *data, uint32_t data_size);
 
 /**
  * Clear the custom data in sync message
+ * Input: phyRadioFrameSync instance
+ * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncClearCustomData(phyRadioFrameSync_t *inst);
 
 /**
  * Get the latest received custom data
+ * Input: phyRadioFrameSync instance
+ * Input: Array to populate
+ * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameGetLatestCustomData(phyRadioFrameSync_t *inst, uint8_t **data);
 
 /**
- * Notify that the sync packet has been sent
+ * Notify that the module that a sync packet has been sent
+ * Input: phyRadioFrameSync instance
+ * Input: The packet sent
+ * Returns: phyRadioFrameSyncErr_t
  */
 
 int32_t phyRadioFrameSyncNotifySyncSent(phyRadioFrameSync_t *inst, halRadioPackage_t* hal_packet);
 
 /**
- * This function is used to manage current state of the frame sync module
+ * This function is used to manage the current state of the frame sync module
+ * Input: phyRadioFrameSync instance
+ * Input: New mode
+ * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncSetMode(phyRadioFrameSync_t *inst, phyRadioFrameSyncMode_t mode);
  
@@ -213,6 +241,8 @@ int32_t phyRadioFrameSyncTimeLeftInSlot(phyRadioFrameSync_t *inst, uint8_t slot)
 
 /**
  * Process function call
+ * Input: phyRadioFrameSync instance
+ * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst);
 

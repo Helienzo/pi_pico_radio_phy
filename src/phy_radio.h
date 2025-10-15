@@ -68,9 +68,6 @@ extern "C" {
 #define PHY_RADIO_MAX_BLOCK_DELAY_TIME_US (20)
 #endif /* PHY_RADIO_MAX_BLOCK_DELAY_TIME_US */
 
-// Guard time before the next slot start enables preparing the radio for the next slot
-#define PHY_RADIO_TX_PREPARE_US (PHY_RADIO_SLOT_TIME_US - PHY_RADIO_GUARD_TIME_US)
-
 // GPIO pin used to signal current radio mode
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
 #ifndef HAL_RADIO_PIN_TX_RX

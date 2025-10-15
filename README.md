@@ -30,8 +30,8 @@ In TDD scan/peripheral mode the radio first scans for beacons and once found syn
 In TDD mode the send function queues packets on a given slot, the maximum number of packets that fits in the queue can be configured. The main limitation is the time length of the slot and the bitrate of the radio. Queuing more data than we have time to send will make the packet spill over into the next available send slot. That might cause congestion in a high trouhput situation. Once a packet is sent the module automatically pops the next packet from the queue and send it until the TX slot time is complete.  
   
 During an RX slot the radio listens continously for incomming packets.  
-
+  
+The Frame can be configured to use any number of slots and each slot can scheduled either as an RX or IDLE slot. IDLE slots can be used to send packets.
+  
 ## Known limitations
- The TDD mode currently only supports two devices in a point to point communication mode. I have plans to implement multidevice support sometimes in the future.
-
  The send function in TDD mode currently does not warn if the total number of packets queued in a single slot exceeds the maximum available transfer time. I might add a check for that in a later fix.

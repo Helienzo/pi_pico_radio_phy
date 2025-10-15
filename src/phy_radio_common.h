@@ -84,6 +84,7 @@ extern "C" {
 #endif /* PHY_RADIO_NUM_TICKS_IN_FRAME */
 
 #ifndef PHY_RADIO_BROADCAST_ADDR
+// It might be a problem that this is not linked to RFM69_DEFAULT_BROADCAST_ADDR
 #define PHY_RADIO_BROADCAST_ADDR (0xFF)
 #endif /* PHY_RADIO_BROADCAST_ADDR */
 

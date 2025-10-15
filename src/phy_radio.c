@@ -53,9 +53,6 @@ typedef enum {
     PHY_RADIO_INT_SLOT_START_TIMER,
     PHY_RADIO_INT_SCAN_TIMER,
     PHY_RADIO_INT_SEND_TIMER,
-    PHY_RADIO_INT_REPEATING_TIMER,
-    PHY_RADIO_INT_PREPARE_TIMER,
-    PHY_RADIO_INT_SYNC_TIMER,
 } phyRadioInterruptEvent_t;
 
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot);
@@ -1677,7 +1674,7 @@ static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet) {
 
     // If the packet is an broadcast packet use the broadcast addr
     if (packet->type == PHY_RADIO_PKT_BROADCAST) {
-        packet->addr = RFM69_DEFAULT_BROADCAST_ADDR;
+        packet->addr = PHY_RADIO_BROADCAST_ADDR;
     }
 
     // Store the packet in the outgoing slot
