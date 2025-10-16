@@ -26,6 +26,7 @@
 #include "pico/stdlib.h"
 
 typedef enum {
+    PHY_RADIO_TIMER_ACTIVE            = 1,
     PHY_RADIO_TIMER_SUCCESS           = 0,
     PHY_RADIO_TIMER_NULL_ERROR        = -21001,
     PHY_RADIO_TIMER_GEN_ERROR         = -21002,
@@ -36,18 +37,36 @@ typedef enum {
 } phyRadioTimerErr_t;
 
 typedef struct phyRadioTimer phyRadioTimer_t;
+typedef struct phyRadioTimerConfig phyRadioTimerConfig_t;
+typedef struct phyRadioTaskTimer phyRadioTaskTimer_t;
+
 typedef struct phyRadioTimerInternal phyRadioTimerInternal_t;
 
-typedef int32_t (*phyRadioTimerCb_t)(phyRadioTimer_t *inst);
+typedef int32_t (*phyRadioFrameTimerCb_t)(phyRadioTimer_t *inst);
+typedef int32_t (*phyRadioTickTimerCb_t)(phyRadioTimer_t *inst, uint16_t index);
+typedef int32_t (*phyRadioTaskTimerCb_t)(phyRadioTaskTimer_t *inst);
 
 struct phyRadioTimer {
     bool                     initialized;
     phyRadioTimerInternal_t *_private;
 
-    phyRadioTimerCb_t prepare_cb;
-    phyRadioTimerCb_t sync_cb;
-    phyRadioTimerCb_t task_cb;
-    phyRadioTimerCb_t repeating_cb;
+    phyRadioFrameTimerCb_t      frame_cb;
+    phyRadioTickTimerCb_t      tick_cb;
+
+    // Tick sequence configurations
+    uint16_t               tick_index;
+    phyRadioTimerConfig_t *timer_config;
+};
+
+struct phyRadioTimerConfig {
+    uint16_t *tick_sequence; // Array of tick intervals
+    uint16_t  num_ticks;     // Number of elements in the array
+};
+
+struct phyRadioTaskTimer {
+    bool                  initialized;
+    alarm_id_t            task_alarm_id;    // Timer alarm used for time dependent tasks
+    phyRadioTaskTimerCb_t task_cb;
 };
 
 /**
@@ -55,7 +74,16 @@ struct phyRadioTimer {
  * Input: phyRadioTimer instance
  * Returns: phyRadioTimerErr_t
  */
-int32_t phyRadioTimerInit(phyRadioTimer_t *inst);
+int32_t phyRadioTimerInit(phyRadioTimer_t *inst, uint32_t max_frame_len_us, uint32_t max_tick_len_us);
+
+/**
+ * Set a tick timer sequence configuration
+ * Input: phyRadioTimer instance
+ * Input: configuration, NOTE this parameter must persist through the lifetime of the timer instance
+ *        the data stored in the configuration will be updated. Only call this function once for a given config.
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerSetConfig(phyRadioTimer_t *inst, phyRadioTimerConfig_t *config);
 
 /**
  * De-Init the phy radio timer
@@ -72,114 +100,26 @@ int32_t phyRadioTimerDeInit(phyRadioTimer_t *inst);
 int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst);
 
 /**
- * Start a sync timer
+ * Stop an ongoing tick timer without complete disable
  * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
  * Returns: phyRadioTimerErr_t
  */
-int32_t phyRadioTimerStartSyncTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us);
+int32_t phyRadioTimerStopTickTimer(phyRadioTimer_t *inst);
 
 /**
- * Cancel an ongoing sync timer
+ * Start both a frame timer and a tick timer that triggers at a regular interval after the frame timer
  * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
+ * Input: Callback to be called on each timer tick
+ * Input: Callback to be called on each new frame
+ * Input: Frame timer period
+ * Input: Tick timer period
+ * Input: Frame timer offset (starts frame timer this many us into the period)
  * Returns: phyRadioTimerErr_t
  */
-int32_t phyRadioTimerCancelSyncTimer(phyRadioTimer_t *inst);
+int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTickTimerCb_t tick_cb, phyRadioFrameTimerCb_t frame_cb, uint32_t period_us, uint32_t tick_period_us, uint32_t frame_offset_us);
 
 /**
- * Start a task timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerStartTaskTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us);
-
-/**
- * Cancel an ongoing task timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerCancelTaskTimer(phyRadioTimer_t *inst);
-
-/**
- * Start a prepare timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerStartSinglePrepareTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t time_us);
-
-/**
- * Cancel an ongoing prepare timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerCancelPrepareTimer(phyRadioTimer_t *inst);
-
-/**
- * Start a repeating timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on each timeout
- * Input: Period time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerStartRepeatingTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t cb, uint32_t period_us);
-
-/**
- * Stop an ongoing repeating timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on timeout
- * Input: Timeout time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerStopRepeatingTimer(phyRadioTimer_t *inst);
-
-/**
- * Update the period on the repeating timer
- * Input: phyRadioTimer instance
- * Input: Period time in micro seconds
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerUpdateRepeatingTimer(phyRadioTimer_t *inst, float new_period_us);
-
-/**
- * Get time until next repeating timer
- * Input: phyRadioTimer instance
- * Input: Time until next fire
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioRepeatingTimerGetTimeToNext(phyRadioTimer_t *inst, uint32_t *period_us);
-
-/**
- * Get time until next prepare timer
- * Input: phyRadioTimer instance
- * Input: Time until next fire
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioPrepareTimerGetTimeToNext(phyRadioTimer_t *inst, uint32_t *period_us);
-
-/**
- * Start both a repeating timer and a prepare timer that lauches guard period before repeating timer
- * Input: phyRadioTimer instance
- * Input: Callback to be called on repeating timer
- * Input: Callback to be called on prep timer
- * Input: Shared timer period
- * Input: Guard period between timers
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t rep_cb, phyRadioTimerCb_t prep_cb, uint32_t period_us, uint32_t guard_period);
-
-/**
- * Update the period synchronously on both repeating timers keeping the guard period
+ * Update the period synchronously on both frame timers keeping the tick timer
  * Input: phyRadioTimer instance
  * Input: New Period time in micro seconds
  * Returns: phyRadioTimerErr_t
@@ -187,10 +127,51 @@ int32_t phyRadioTimerStartCombinedTimer(phyRadioTimer_t *inst, phyRadioTimerCb_t
 int32_t phyRadioTimerUpdateCombinedTimer(phyRadioTimer_t *inst, float new_period_us);
 
 /**
- * Stop both repeating timers
+ * Stop both frame timer and tick timer
  * Input: phyRadioTimer instance
  * Input: New Period time in micro seconds
  * Returns: phyRadioTimerErr_t
  */
 int32_t phyRadioTimerStopCombinedTimer(phyRadioTimer_t *inst);
+
+/**
+ * Convert tick timer ticks to us
+ * Input: phyRadioTimer instance
+ * Input: Number of ticks
+ * Returns: phyRadioTimerErr_t or ticks
+ */
+int32_t phyRadioTickTimerTickToUs(phyRadioTimer_t *inst, uint16_t ticks);
+
+/**
+ * Check if the frame timer is active
+ * Input: phyRadioTimer instance
+ * Returns: phyRadioTimerErr_t or ticks
+ */
+int32_t phyRadioTimerIsFrameTimerActive(phyRadioTimer_t *inst);
+
+/**
+ * Init a task timer instance
+ * Input: phyRadioTaskTimer instance
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTaskTimerInit(phyRadioTaskTimer_t *inst);
+
+/**
+ * Start a task timer
+ * Input: phyRadioTaskTimer instance
+ * Input: Callback to be called on timeout
+ * Input: Timeout time in micro seconds
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerStartTaskTimer(phyRadioTaskTimer_t *inst, phyRadioTaskTimerCb_t cb, uint32_t time_us);
+
+/**
+ * Cancel an ongoing task timer
+ * Input: phyRadioTaskTimer instance
+ * Input: Callback to be called on timeout
+ * Input: Timeout time in micro seconds
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerCancelTaskTimer(phyRadioTaskTimer_t *inst);
+
 #endif /* PHY_RADIO_TIMER_H */

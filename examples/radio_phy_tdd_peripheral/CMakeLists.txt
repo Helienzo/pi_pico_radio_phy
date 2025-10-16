@@ -92,6 +92,12 @@ pico_enable_stdio_usb(radio_phy_tdd_peripheral 1)
 target_link_libraries(radio_phy_tdd_peripheral
         pico_stdlib)
 
+# Set compile-time options via -D flags
+target_compile_definitions(radio_phy_tdd_peripheral PRIVATE
+    HAL_RADIO_SLOT_GPIO_DEBUG=1
+    HAL_RADIO_PIN_TX_RX=12
+)
+
 # Add the standard include files to the build
 target_include_directories(radio_phy_tdd_peripheral PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}

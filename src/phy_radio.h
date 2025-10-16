@@ -30,64 +30,33 @@ extern "C" {
 #include "static_queue.h"
 #include "c_buffer.h"
 #include "phy_radio_timer.h"
+#include "phy_radio_common.h"
+#include "phy_radio_frame_sync.h"
 
 #ifndef CONTAINER_OF
 #define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
 #endif
 
-// Packet sizes
-#define PHY_RADIO_SENDER_ADDR_SIZE    (1)
-#define PHY_RADIO_PKT_TYPE_SIZE       (1)
-#define PHY_RADIO_OVERHEAD_SIZE       (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE)
-#define PHY_RADIO_RX_BUFFER_SIZE      (HAL_RADIO_MAX_BUFFER_SIZE + C_BUFFER_ARRAY_OVERHEAD)
-#define PHY_RADIO_MAX_PACKET_SIZE     (HAL_RADIO_MAX_PACKET_SIZE - PHY_RADIO_OVERHEAD_SIZE)
-#define PHY_RADIO_TOTAL_OVERHEAD_SIZE (PHY_RADIO_OVERHEAD_SIZE + HAL_RADIO_PACKET_OVERHEAD)
-
-/* NOTE: The minimum bitrate supported is ~15kbps, due to the maximum representable
- * latency in us is 8191. Bitrates lower than this risk overshooting.
-*/
-// Sync message and time synchronization
-#define PHY_RADIO_TX_TIME_SIZE            (1)
-#define PHY_RADIO_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_TX_TIME_SIZE)
-#define PHY_RADIO_SYNC_MSG_MAX_TIME       (8191) // 2^13 - 1
-#define PHY_RADIO_SYNC_MSG_TIME_MASK      (0x1FFF)
-#define PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT (8)
-#define PHY_RADIO_SYNC_MSG_TIME_MSB_MASK  (0x1F)
-#define PHY_RADIO_SYNC_MSG_TIME_LSB_MASK  (0xFF)
-
 // TDMA parameters
 #ifndef PHY_RADIO_NUM_SLOTS
-#define PHY_RADIO_NUM_SLOTS (2)
+#define PHY_RADIO_NUM_SLOTS (PHY_RADIO_NUM_SLOTS_IN_FRAME)
 #endif /* PHY_RADIO_NUM_SLOTS */
 
 #ifndef PHY_RADIO_NUM_ITEMS_SLOTS
 #define PHY_RADIO_NUM_ITEMS_SLOTS (4)
 #endif /* PHY_RADIO_NUM_ITEMS_SLOTS */
 
-#ifndef PHY_RADIO_SUPERFRAME_LEN
-#define PHY_RADIO_SUPERFRAME_LEN (20)
-#endif /* PHY_RADIO_SUPERFRAME_LEN */
-
 #ifndef PHY_RADIO_SYNC_TIMEOUT
 #define PHY_RADIO_SYNC_TIMEOUT (3)
 #endif /* PHY_RADIO_SYNC_TIMEOUT */
 
-#ifndef PHY_RADIO_PERIPHERAL_TX_SLOT
-#define PHY_RADIO_PERIPHERAL_TX_SLOT (1)
-#endif /* PHY_RADIO_PERIPHERAL_TX_SLOT */
+#ifndef PHY_RADIO_PERIPHERAL_RX_SLOT
+#define PHY_RADIO_PERIPHERAL_RX_SLOT (0)
+#endif /* PHY_RADIO_PERIPHERAL_RX_SLOT */
 
 #ifndef PHY_RADIO_CENTRAL_TX_SLOT
 #define PHY_RADIO_CENTRAL_TX_SLOT (0)
 #endif /* PHY_RADIO_CENTRAL_TX_SLOT */
-
-// Slot times in us
-#ifndef PHY_RADIO_SLOT_TIME_US
-#define PHY_RADIO_SLOT_TIME_US (20000)
-#endif /* PHY_RADIO_SLOT_TIME_US */
-
-#ifndef PHY_RADIO_GUARD_TIME_US
-#define PHY_RADIO_GUARD_TIME_US (1000)
-#endif /* PHY_RADIO_GUARD_TIME_US */
 
 // Guard time between two TX packets in the same slot
 #ifndef PHY_RADIO_PACKET_GUARD_TIME_US
@@ -98,12 +67,6 @@ extern "C" {
 #ifndef PHY_RADIO_MAX_BLOCK_DELAY_TIME_US
 #define PHY_RADIO_MAX_BLOCK_DELAY_TIME_US (20)
 #endif /* PHY_RADIO_MAX_BLOCK_DELAY_TIME_US */
-
-#define PHY_RADIO_SUPERFRAME_TIME_US (PHY_RADIO_SLOT_TIME_US * PHY_RADIO_SUPERFRAME_LEN)
-#define PHY_RADIO_SUPERFRAME_TIME_MS (PHY_RADIO_SUPERFRAME_TIME_US/1000)
-
-// Guard time before the next slot start enables preparing the radio for the next slot
-#define PHY_RADIO_TX_PREPARE_US (PHY_RADIO_SLOT_TIME_US - PHY_RADIO_GUARD_TIME_US)
 
 // GPIO pin used to signal current radio mode
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
@@ -118,28 +81,14 @@ extern "C" {
 #endif /* PHY_RADIO_DEFAULT_CHANNEL */
 
 #ifndef PHY_RADIO_BIT_RATE
-#define PHY_RADIO_BIT_RATE (HAL_RADIO_BITRATE_150)
+#define PHY_RADIO_BIT_RATE (HAL_RADIO_BITRATE_300)
 #endif /* PHY_RADIO_BIT_RATE */
 
 #ifndef PHY_RADIO_DEFAULT_TX_POWER_DBM
 #define PHY_RADIO_DEFAULT_TX_POWER_DBM (0)
 #endif /* PHY_RADIO_DEFAULT_TX_POWER_DBM */
 
-#ifndef PHY_RADIO_BROADCAST_ADDR
-#define PHY_RADIO_BROADCAST_ADDR (0xFF)
-#endif /* PHY_RADIO_BROADCAST_ADDR */
-
-#ifndef PHY_RADIO_PID_KP
-#define PHY_RADIO_PID_KP 0.006f
-#endif /* PHY_RADIO_PID_KP */
-
-#ifndef PHY_RADIO_PID_KI
-#define PHY_RADIO_PID_KI 0.00001f
-#endif /* PHY_RADIO_PID_KI */
-
-#ifndef PHY_RADIO_PID_KD
-#define PHY_RADIO_PID_KD 0.06f
-#endif /* PHY_RADIO_PID_KD */
+#define PHY_RADIO_INFINITE_SLOT_TYPE (-1)
 
 typedef enum {
     PHY_RADIO_INTERRUPT_IN_QUEUE = 1,
@@ -158,10 +107,10 @@ typedef enum {
     PHY_RADIO_INVALID_SLOT  = -20012,
     PHY_RADIO_TDMA_ERROR    = -20013,
     PHY_RADIO_QUEUE_ERROR   = -20014,
-    PHY_RADIO_SLOT_OVERFLOW = -20015,
 } phyRadioErr_t;
 
 typedef enum {
+    PHY_RADIO_MODE_FRAME_ERROR = -20093,
     PHY_RADIO_MODE_TIMER_ERROR = -20092,
     PHY_RADIO_MODE_HAL_ERROR   = -20091,
     PHY_RADIO_MODE_IDLE,
@@ -176,15 +125,6 @@ typedef enum {
     PHY_RADIO_SLOT_RX,
     PHY_RADIO_SLOT_TX,
 } phyRadioSlotType_t;
-
-#define PHY_RADIO_PACKET_TYPE_MASK  0xE0
-#define PHY_RADIO_PACKET_TYPE_SHIFT 5
-
-typedef enum {
-    PHY_RADIO_PKT_DIRECT = 1,        // Direct message heard only by device with matching addr
-    PHY_RADIO_PKT_BROADCAST,     // Broadcast packet heard by all
-    PHY_RADIO_PKT_INTERNAL_SYNC, // Used internaly by the phy layer to syncronize time between devices
-} phyRadioPktType_t;
 
 typedef enum {
     PHY_RADIO_CB_SET_SCAN       = 2,
@@ -206,7 +146,6 @@ typedef enum {
 } phyRadioSyncId_t;
 
 typedef struct phyRadioInterface phyRadioInterface_t;
-typedef struct phyRadioPacket    phyRadioPacket_t;
 typedef struct phyRadioSyncState phyRadioSyncState_t;
 
 /**
@@ -262,13 +201,18 @@ struct phyRadioInterface {
 };
 
 // Slot item
-typedef struct {
+struct phyRadioSlotItem {
     phyRadioPacket_t  *pkt;
     staticQueueItem_t node;
-} phyRadioSlotItem_t;
+};
 
 // Complete scheduler structure
 typedef struct {
+    uint8_t              my_address;
+    halRadio_t          *hal_radio_inst;
+    halRadioInterface_t *hal_interface;
+    phyRadio_t          *phy_radio_inst;
+
     // Each slot can hold a number of packets
     struct {
         // Slot items and queue
@@ -277,62 +221,54 @@ typedef struct {
 
         // Slot type
         phyRadioSlotType_t type;
+
+        // Time as type
+        uint32_t num_frames_as_type;
     } slot[PHY_RADIO_NUM_SLOTS];
 
     uint8_t            current_slot;
     phyRadioPacket_t   *active_item;
     bool               in_flight;
-    uint64_t           pkt_sent_time;
     uint32_t           scan_timeout_ms;
     uint16_t           packet_delay_time_us; // The time it will take for the receiver to read and decode this packet
 
     // Superframe management
-    uint32_t superslot_counter; // Keeping track of number of slots in a superframe
-    uint32_t sync_counter;      // Keeping track of frames since last sync
+    uint16_t frame_counter; // Keeping track of number of slots in a superframe
+    uint16_t sync_interval; // Keeping track of number of slots in a superframe
+    uint16_t sync_counter;  // Keeping track of frames since last sync
+    uint32_t hal_bitrate;
 
-    // The actuall time it takes to send a sync message
-    uint16_t central_sync_msg_time;
-
-    // The estimated length of the centrals superslot time
-    // Due to slight clock drift it might differ from ours
-    uint64_t slot_start_time;
-    uint64_t slot_duration;
-    float    float_slot_duration;
-
-    // PID gains & state
-    float   error_prev;
-    float   integral;
-
-    float    inverse_of_num_slots;
+    // Module responsible for syncronizing internal timers
+    phyRadioFrameSync_t frame_sync;
 } phyRadioTdma_t;
 
-struct phyRadioPacket {
-    cBuffer_t *pkt_buffer;
-    uint8_t    type; // Phy packet type, phyRadioPktType_t
-    uint8_t    addr; // Destination when sending, Sender when receiving
-    uint8_t    slot; // Destination slot when sending, What slot it was received on when receiving
-};
 
 struct phyRadioSyncState {
-    // TODO, pehaps inform about the slot scheme.
-    uint32_t       tx_slot_number;  // The current phy radio tx slot number
-    phyRadioMode_t mode;            // The current phy radio mode
-    uint8_t        central_address; // The address to the central device
+    uint32_t       sync_slot_number; // The current phy radio slot used for sync messages
+    phyRadioMode_t mode;             // The current phy radio mode
+    uint8_t        central_address;  // The address to the central device
+    uint8_t       *custom_data;      // Custom data sent in the sync message
 };
+
+typedef struct {
+    phyRadio_t          *phy_radio_inst;
+    halRadio_t          *hal_radio_inst;
+    halRadioInterface_t *hal_interface;
+    uint8_t              my_address;
+    uint8_t              hal_bitrate;
+} phyRadioTdmaInit_t;
+
 
 /**
  * The main data type for this module
  */
-typedef struct {
+struct phyRadio {
     // phyRadio internal states
     phyRadioInterface_t *interface;
     phyRadioSyncState_t  sync_state;
 
     // Internal messages and buffers
     uint8_t              my_address;
-    uint8_t              sync_message_array[PHY_RADIO_SYNC_MSG_SIZE + C_BUFFER_ARRAY_OVERHEAD + HAL_RADIO_PACKET_OVERHEAD];
-    cBuffer_t            sync_message_buf;
-    phyRadioPacket_t     sync_packet;
     uint8_t              rx_byte_array[PHY_RADIO_RX_BUFFER_SIZE];
     cBuffer_t            rx_buffer;
 
@@ -341,12 +277,12 @@ typedef struct {
     halRadioInterface_t hal_interface;
 
     // Timer management
-    phyRadioTimer_t  radio_timer;
-    volatile uint8_t timer_interrupt;
+    phyRadioTaskTimer_t  task_timer;
+    volatile uint8_t     timer_interrupt;
 
     // Phy TDMA Scheduler
     phyRadioTdma_t     tdma_scheduler;
-} phyRadio_t;
+};
 
 /**
  * Initialize the phy radio module
@@ -394,7 +330,31 @@ int32_t phyRadioSetCentralMode(phyRadio_t *inst);
 int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
 
 /**
- * Send a message on the next avialable slot
+ * Transition from Central to Peripheral without losing sync
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioTransitionCentralToPeripheral(phyRadio_t *inst, uint8_t new_central_addr);
+
+/**
+ * Transition from Peripheral to Central without losing sync
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioTransitionPeripheralToCentral(phyRadio_t *inst);
+
+/**
+ * Configure the frame structure used by the phy.
+ * Input: phyRadio instance
+ * Inpuut: New frame structure
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame);
+
+/**
+ * Send a message on the next avialable slot.
+ * This schedules the targeted slot as a TX slot either in the current frame if the slot is not yet started 
+ * or the next frame if it has passed.
  * Input: phyRadio instance
  * Input: phyRadio packet
  * Returns: phyRadioErr_t
@@ -402,12 +362,39 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst);
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
 
 /**
- * Clear all messages from a slot
+ * Receive data on a specific slot. This schedules a slot as RX for a specified time.
+ * Input: phyRadio instance
+ * Input: Targeted slot
+ * Input: Num of frames as RX. -1 indicates indefinite RX on this slot
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, int16_t num_frames);
+
+/**
+ * Schedule a packet scanning during a slot interval and on a specific channel.
+ * Input:  phyRadio instance
+ * Input: Start scan slot
+ * Input: End scan slot
+ * Input: Channel to scan on
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioScanDuringSlots(phyRadio_t *inst, uint8_t s_slot, uint8_t e_slot, uint32_t channel);
+
+/**
+ * Clear all messages from a slot, make the slot idle, neither RX or TX.
  * Input: phyRadio instance
  * Input: Slot to clear
  * Returns: phyRadioErr_t
  */
 int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot);
+
+/**
+ * Remove a queued item from a slot
+ * Input: phyRadio instance
+ * Input: Pointer to the packet to remove (uses pkt->slot to identify the slot)
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioRemoveFromSlot(phyRadio_t *inst, phyRadioPacket_t *pkt);
 
 #ifdef __cplusplus
 }
