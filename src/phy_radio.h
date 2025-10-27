@@ -371,12 +371,20 @@ int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
 
 /**
- * Receive data on a specific slot. This schedules a slot as RX for a specified time.
+ * Receive data on a specific slot. Will automatically switch to TX if send on the same slot
  * Input: phyRadio instance
  * Input: Targeted slot
  * Returns: phyRadioErr_t
  */
 int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot);
+
+/**
+ * Set a specific slot as IDLE.
+ * Input: phyRadio instance
+ * Input: Targeted slot
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioSetSlotIdle(phyRadio_t *inst, uint8_t slot);
 
 /**
  * Schedule a packet scanning during a slot interval and on a specific channel.

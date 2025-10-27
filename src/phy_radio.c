@@ -1836,6 +1836,24 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
     return PHY_RADIO_SUCCESS;
 }
 
+int32_t phyRadioSetSlotIdle(phyRadio_t *inst, uint8_t slot) {
+    if (inst == NULL) {
+        return PHY_RADIO_NULL_ERROR;
+    }
+
+    // Check if the slot is a valid value
+    if (slot > PHY_RADIO_NUM_SLOTS) {
+        return PHY_RADIO_INVALID_SLOT;
+    }
+
+    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
+
+    // Configure the slot
+    tdma_scheduler->slot[slot].main_type = PHY_RADIO_SLOT_IDLE;
+
+    return PHY_RADIO_SUCCESS;
+}
+
 int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot) {
     if (inst == NULL) {
         return PHY_RADIO_NULL_ERROR;
