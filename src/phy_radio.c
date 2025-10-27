@@ -34,21 +34,29 @@ __attribute__((weak)) void radio_log(const char *format, ...) {
     va_end(args);
 }
 
-#ifndef LOG
+#ifndef PHY_RADIO_LOG_ENABLE
+#define PHY_RADIO_LOG_ENABLE (1)
+#endif /* PHY_RADIO_LOG_ENABLE */
+
+#if PHY_RADIO_LOG_ENABLE == 1
 #define LOG(f_, ...) radio_log((f_), ##__VA_ARGS__)
-#endif
-
-#ifndef LOG_DEBUG
-#define LOG_DEBUG(f_, ...)// printf((f_), ##__VA_ARGS__)
-#endif
-
-#ifndef LOG_V_DEBUG
-#define LOG_V_DEBUG(f_, ...)// printf((f_), ##__VA_ARGS__)
-#endif
-
-#ifndef LOG_TIMER_ERROR
 #define LOG_TIMER_ERROR(f_, ...) radio_log((f_), ##__VA_ARGS__)
-#endif
+#else
+#define LOG(f_, ...)
+#define LOG_TIMER_ERROR(f_, ...)
+#endif /* PHY_RADIO_LOG_ENABLE  */
+
+#ifdef PHY_RADIO_LOG_DEBUG_ENABLE
+#define LOG_DEBUG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
+#define LOG_DEBUG(f_, ...)
+#endif /* PHY_RADIO_LOG_DEBUG_ENABLE */
+
+#ifdef PHY_RADIO_LOG_V_DEBUG_ENABLE
+#define LOG_V_DEBUG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
+#define LOG_V_DEBUG(f_, ...)
+#endif /* PHY_RADIO_LOG_V_DEBUG_ENABLE */
 
 #ifndef UNUSED
 #define UNUSED(x) (void)(x)
