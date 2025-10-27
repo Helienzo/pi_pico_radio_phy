@@ -124,8 +124,10 @@ typedef struct {
     uint8_t             sync_message_array[PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE + C_BUFFER_ARRAY_OVERHEAD + HAL_RADIO_PACKET_OVERHEAD];
     cBuffer_t           sync_message_buf;
     phyRadioPacket_t    sync_packet;
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     uint8_t             sync_packet_gen_data[PHY_RADIO_SYNC_GEN_DATA_SIZE]; // Contains custom data configurable by higher layers
     uint8_t             sync_packet_received_gen_data[PHY_RADIO_SYNC_GEN_DATA_SIZE]; // Received custom data
+#endif
     
     // Frame management
     phyRadioFrameConfig_t *frame_config; // Pointer to the current frame config

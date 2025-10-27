@@ -31,7 +31,6 @@ extern "C" {
 #include "c_buffer.h"
 #include "pico/stdlib.h"
 
-
 #ifndef PHY_RADIO_SYNC_GEN_DATA_SIZE
 #define PHY_RADIO_SYNC_GEN_DATA_SIZE (1)
 #endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */

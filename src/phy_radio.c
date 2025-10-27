@@ -2001,3 +2001,11 @@ int32_t phyRadioRemoveFromSlot(phyRadio_t *inst, phyRadioPacket_t *pkt) {
 
     return res;
 }
+
+int32_t phyRadioSetCustomData(phyRadio_t *inst, uint8_t *data, uint32_t data_size) {
+    return phyRadioFrameSyncSetCustomData(&inst->tdma_scheduler.frame_sync, data, data_size);
+}
+
+int32_t phyRadioClearCustomData(phyRadio_t *inst) {
+    return phyRadioFrameSyncClearCustomData(&inst->tdma_scheduler.frame_sync);
+}

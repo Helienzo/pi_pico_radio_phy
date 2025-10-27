@@ -412,6 +412,22 @@ int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot);
  */
 int32_t phyRadioRemoveFromSlot(phyRadio_t *inst, phyRadioPacket_t *pkt);
 
+/**
+ * Write to custom data field in SYNC message
+ * Input: phyRadio instance
+ * Input: Pointer to data
+ * Input: Num Bytes in data
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioSetCustomData(phyRadio_t *inst, uint8_t *data, uint32_t data_size);
+
+/**
+ * Clear the custom data field in SYNC message, set to 0x00 for all bytes
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioClearCustomData(phyRadio_t *inst);
+
 #ifdef __cplusplus
 }
 #endif

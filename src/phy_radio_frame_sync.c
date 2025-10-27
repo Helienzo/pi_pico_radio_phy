@@ -192,11 +192,13 @@ int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket
     packet_header[1] = phy_pkt_type | (uint8_t)((inst->central_sync_msg_time >> PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT) &
                                                     PHY_RADIO_SYNC_MSG_TIME_MSB_MASK); // Write MSB
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     if (PHY_RADIO_SYNC_GEN_DATA_SIZE > 0) {
         for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
             cBufferPrependByte(inst->sync_packet.pkt_buffer, inst->sync_packet_gen_data[i]); // This is safe, lets not check retvals
         }
     }
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     // Add the phy and sync packet header
     cBufferPrependByte(inst->sync_packet.pkt_buffer, packet_header[0]); // This is safe, lets not check retvals
@@ -259,10 +261,12 @@ int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_
 
     int32_t res = syncWithCentral(inst, hal_packet->time, sync_msg_time);
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     // This is not very important, do it after the synchronization
     for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
         inst->sync_packet_received_gen_data[i] = cBufferReadByte(phy_packet->pkt_buffer);
     }
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     return res;
 }
@@ -493,9 +497,11 @@ int32_t phyRadioFrameSyncClearCustomData(phyRadioFrameSync_t *inst) {
         return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
     }
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
         inst->sync_packet_gen_data[i] = 0;
     }
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
@@ -509,9 +515,11 @@ int32_t phyRadioFrameSyncSetCustomData(phyRadioFrameSync_t *inst, uint8_t *data,
         return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
     }
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     for (uint32_t i = 0; i < data_size; i++) {
         inst->sync_packet_gen_data[i] = data[i];
     }
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
@@ -521,7 +529,9 @@ int32_t phyRadioFrameGetLatestCustomData(phyRadioFrameSync_t *inst, uint8_t **da
         return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
     }
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     *data = inst->sync_packet_received_gen_data;
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
