@@ -144,6 +144,7 @@ typedef enum {
     PHY_RADIO_RE_SYNC,       // On new sync message during peripheral mode
     PHY_RADIO_CONFLICT_SYNC, // Conflicting sync from other central device
     PHY_RADIO_SYNC_LOST,     // On new sync message during peripheral mode
+    PHY_RADIO_FRAME_START, // At the start of a RX slot
     PHY_RADIO_RX_SLOT_START, // At the start of a RX slot
     PHY_RADIO_TX_SLOT_START, // At the start of TX slot (Ater the first package is triggered)
     PHY_RADIO_SCAN_TIMEOUT,  // If a scan timed out with no device found
@@ -228,10 +229,8 @@ typedef struct {
         staticQueue_t      static_queue;
 
         // Slot type
-        phyRadioSlotType_t type;
-
-        // Time as type
-        uint32_t num_frames_as_type;
+        phyRadioSlotType_t current_type;
+        phyRadioSlotType_t main_type;
     } slot[PHY_RADIO_NUM_SLOTS];
 
     uint8_t            current_slot;
