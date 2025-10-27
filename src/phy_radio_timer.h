@@ -39,12 +39,14 @@ typedef enum {
 typedef struct phyRadioTimer phyRadioTimer_t;
 typedef struct phyRadioTimerConfig phyRadioTimerConfig_t;
 typedef struct phyRadioTaskTimer phyRadioTaskTimer_t;
+typedef struct phyRadioFastTaskTimer phyRadioFastTaskTimer_t;
 
 typedef struct phyRadioTimerInternal phyRadioTimerInternal_t;
 
 typedef int32_t (*phyRadioFrameTimerCb_t)(phyRadioTimer_t *inst);
 typedef int32_t (*phyRadioTickTimerCb_t)(phyRadioTimer_t *inst, uint16_t index);
 typedef int32_t (*phyRadioTaskTimerCb_t)(phyRadioTaskTimer_t *inst);
+typedef int32_t (*phyRadioFastTaskTimerCb_t)(phyRadioFastTaskTimer_t *inst);
 
 struct phyRadioTimer {
     bool                     initialized;
@@ -67,6 +69,12 @@ struct phyRadioTaskTimer {
     bool                  initialized;
     alarm_id_t            task_alarm_id;    // Timer alarm used for time dependent tasks
     phyRadioTaskTimerCb_t task_cb;
+};
+
+struct phyRadioFastTaskTimer {
+    bool                      initialized;
+    bool                      active;           // Whether the fast task timer is currently running
+    phyRadioFastTaskTimerCb_t task_cb;
 };
 
 /**
@@ -173,5 +181,28 @@ int32_t phyRadioTimerStartTaskTimer(phyRadioTaskTimer_t *inst, phyRadioTaskTimer
  * Returns: phyRadioTimerErr_t
  */
 int32_t phyRadioTimerCancelTaskTimer(phyRadioTaskTimer_t *inst);
+
+/**
+ * Init a fast task timer instance (PWM-based, max 5ms)
+ * Input: phyRadioFastTaskTimer instance
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioFastTaskTimerInit(phyRadioFastTaskTimer_t *inst);
+
+/**
+ * Start a fast task timer (PWM-based, max 5ms)
+ * Input: phyRadioFastTaskTimer instance
+ * Input: Callback to be called on timeout
+ * Input: Timeout time in micro seconds (max 5000)
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerStartFastTaskTimer(phyRadioFastTaskTimer_t *inst, phyRadioFastTaskTimerCb_t cb, uint32_t time_us);
+
+/**
+ * Cancel an ongoing fast task timer
+ * Input: phyRadioFastTaskTimer instance
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerCancelFastTaskTimer(phyRadioFastTaskTimer_t *inst);
 
 #endif /* PHY_RADIO_TIMER_H */

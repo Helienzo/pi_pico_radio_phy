@@ -70,6 +70,7 @@ static int32_t queuePeakOnSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadio
 static int32_t queueJustPopFromSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t *pkt);
 static int32_t scan_timer_alarm_callback(phyRadioTaskTimer_t *interface);
 static int32_t send_timer_alarm_callback(phyRadioTaskTimer_t *interface);
+static int32_t send_fast_timer_alarm_callback(phyRadioFastTaskTimer_t *interface);
 static inline int32_t cancelAllTimers(phyRadio_t *inst);
 static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyRadioPacket_t* packet);
 static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst, uint16_t slot_index);
@@ -82,6 +83,15 @@ static int32_t send_timer_alarm_callback(phyRadioTaskTimer_t *interface) {
     // Get the current phy radio instance
     phyRadio_t *inst = CONTAINER_OF(interface, phyRadio_t, task_timer);
 
+    // Set the interrupt flag, and manage this is the main context
+    inst->timer_interrupt = PHY_RADIO_INT_SEND_TIMER;
+
+    return PHY_RADIO_SUCCESS;
+}
+
+static int32_t send_fast_timer_alarm_callback(phyRadioFastTaskTimer_t *interface) {
+    // Get the current phy radio instance
+    phyRadio_t *inst = CONTAINER_OF(interface, phyRadio_t, fast_task_timer);
     // Set the interrupt flag, and manage this is the main context
     inst->timer_interrupt = PHY_RADIO_INT_SEND_TIMER;
 
@@ -424,7 +434,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     } else {
         // If the wait time is long we need to schedule this as a non blocking task
 
-        res = phyRadioTimerCancelTaskTimer(&inst->task_timer);
+        res = phyRadioTimerCancelFastTaskTimer(&inst->fast_task_timer);
         if (res != PHY_RADIO_TIMER_SUCCESS) {
             // Perhaps we need Double check that the alarm instance is not taken, we should not have to cancel the timer here..
             // But sometimes the alarm id is not 0 here, This is very weird and should never happen
@@ -436,8 +446,8 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
             return res;
         }
 
-        // Set a timer alarm to trigger the send, if the time is short here is seems like the timer can trigger during this call.
-        res = phyRadioTimerStartTaskTimer(&inst->task_timer, send_timer_alarm_callback, (uint32_t)tdma_scheduler->packet_delay_time_us);
+        // Set a fast task timer to trigger the send, if the time is short here is seems like the timer can trigger during this call.
+        res = phyRadioTimerStartFastTaskTimer(&inst->fast_task_timer, send_fast_timer_alarm_callback, (uint32_t)tdma_scheduler->packet_delay_time_us);
         if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 5);
             return PHY_RADIO_TIMER_ERROR;
@@ -1167,7 +1177,12 @@ static int32_t processScan(phyRadio_t *inst) {
 }
 
 static inline int32_t cancelAllTimers(phyRadio_t *inst) {
-    return phyRadioTimerCancelTaskTimer(&inst->task_timer);
+    int32_t res = phyRadioTimerCancelTaskTimer(&inst->task_timer);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
+        return res;
+    }
+
+    return phyRadioTimerCancelFastTaskTimer(&inst->fast_task_timer);
 }
 
 static int32_t processPeripheral(phyRadio_t *inst) {
@@ -1381,11 +1396,6 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
         return PHY_RADIO_NULL_ERROR;
     }
 
-    int32_t res = phyRadioTaskTimerInit(&inst->task_timer);
-    if (res != PHY_RADIO_TIMER_SUCCESS) {
-        return res;
-    }
-
     // Init the halRadio and set the receiver address
     halRadioConfig_t hal_config = {
         .bitrate = PHY_RADIO_BIT_RATE,
@@ -1395,7 +1405,7 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
         .power_dbm  = PHY_RADIO_DEFAULT_TX_POWER_DBM,
     };
 
-    res = halRadioInit(&inst->hal_radio_inst, hal_config);
+    int32_t res = halRadioInit(&inst->hal_radio_inst, hal_config);
     if (res != HAL_RADIO_SUCCESS) {
         return res;
     }
@@ -1426,6 +1436,21 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
     };
 
     res = initTdmaScheduler(&inst->tdma_scheduler, &tdma_init);
+    if (res != PHY_RADIO_SUCCESS) {
+        return res;
+    }
+
+    // Initialize task timer AFTER TDMA scheduler (which sets up PWM IRQ handler)
+    res = phyRadioTaskTimerInit(&inst->task_timer);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
+        return res;
+    }
+
+    // Initialize fast task timer AFTER TDMA scheduler (which sets up PWM IRQ handler)
+    res = phyRadioFastTaskTimerInit(&inst->fast_task_timer);
+    if (res != PHY_RADIO_TIMER_SUCCESS) {
+        return res;
+    }
 
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
     // Init the TX RX GPIO
@@ -1473,8 +1498,8 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
     }
 
     if (timeout_ms > 0) {
-        timeout_ms = timeout_ms*1000; // Convert to us
-        res = phyRadioTimerStartTaskTimer(&inst->task_timer, scan_timer_alarm_callback, timeout_ms);
+        uint32_t timeout_us = timeout_ms * 1000; // Convert ms to us
+        res = phyRadioTimerStartTaskTimer(&inst->task_timer, scan_timer_alarm_callback, timeout_us);
         if (res != PHY_RADIO_TIMER_SUCCESS) {
             LOG_TIMER_ERROR("Timer error %i\n", 13);
             return PHY_RADIO_TIMER_ERROR;

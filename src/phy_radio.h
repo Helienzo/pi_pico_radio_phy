@@ -238,6 +238,9 @@ typedef struct {
     uint16_t sync_counter;  // Keeping track of frames since last sync
     uint32_t hal_bitrate;
 
+    // ForEach context for slot operations
+    uint8_t fe_slot_target;
+
     // Module responsible for syncronizing internal timers
     phyRadioFrameSync_t frame_sync;
 } phyRadioTdma_t;
@@ -277,8 +280,9 @@ struct phyRadio {
     halRadioInterface_t hal_interface;
 
     // Timer management
-    phyRadioTaskTimer_t  task_timer;
-    volatile uint8_t     timer_interrupt;
+    phyRadioTaskTimer_t      task_timer;
+    phyRadioFastTaskTimer_t  fast_task_timer;
+    volatile uint8_t         timer_interrupt;
 
     // Phy TDMA Scheduler
     phyRadioTdma_t     tdma_scheduler;
