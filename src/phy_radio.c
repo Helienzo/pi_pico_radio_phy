@@ -1836,7 +1836,7 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
     return PHY_RADIO_SUCCESS;
 }
 
-int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, int16_t num_frames) {
+int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot) {
     if (inst == NULL) {
         return PHY_RADIO_NULL_ERROR;
     }

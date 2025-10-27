@@ -92,8 +92,6 @@ extern "C" {
 #define PHY_RADIO_DEFAULT_TX_POWER_DBM (0)
 #endif /* PHY_RADIO_DEFAULT_TX_POWER_DBM */
 
-#define PHY_RADIO_INFINITE_SLOT_TYPE (-1)
-
 typedef enum {
     PHY_RADIO_INTERRUPT_IN_QUEUE = 1,
     PHY_RADIO_SUCCESS            = 0,
@@ -376,10 +374,9 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
  * Receive data on a specific slot. This schedules a slot as RX for a specified time.
  * Input: phyRadio instance
  * Input: Targeted slot
- * Input: Num of frames as RX. -1 indicates indefinite RX on this slot
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, int16_t num_frames);
+int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot);
 
 /**
  * Schedule a packet scanning during a slot interval and on a specific channel.

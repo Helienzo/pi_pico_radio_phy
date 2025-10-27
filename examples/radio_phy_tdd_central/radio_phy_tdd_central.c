@@ -249,7 +249,7 @@ int main()
         device_error();
     }
 
-    if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 2, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
+    if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 2)) != PHY_RADIO_SUCCESS) {
         LOG("RADIO SET MODE FAILED! %i\n", res);
         device_error();
     }

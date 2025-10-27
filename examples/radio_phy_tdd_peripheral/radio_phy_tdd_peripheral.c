@@ -186,7 +186,7 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
 
            int32_t res = PHY_RADIO_SUCCESS;
            // Receive on slot 1 indefinetly
-           if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 1, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
+           if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 1)) != PHY_RADIO_SUCCESS) {
                LOG("RADIO SET MODE FAILED! %i\n", res);
                device_error();
            }
