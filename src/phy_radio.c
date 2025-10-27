@@ -457,12 +457,6 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
 
         res = phyRadioTimerCancelFastTaskTimer(&inst->fast_task_timer);
         if (res != PHY_RADIO_TIMER_SUCCESS) {
-            // Perhaps we need Double check that the alarm instance is not taken, we should not have to cancel the timer here..
-            // But sometimes the alarm id is not 0 here, This is very weird and should never happen
-            // It would mean that we have an active alarm but still got a packet sent
-            // It could mean that the main loop never had time to manage our alarm.
-            // Or it could be some other issue where the flag was not correctly set
-            // TODO this error can happen but it is fairly rare, try to just cancel the timer, it is probably allready managed
             LOG_TIMER_ERROR("Timer error %i\n", 4);
             return res;
         }
@@ -1071,9 +1065,19 @@ static int32_t resetTdmaScheduler(phyRadioTdma_t *inst) {
     inst->current_slot  = 0;
     inst->sync_counter  = 0;
     inst->in_flight     = false;
+    inst->active_item   = NULL;
     inst->frame_counter = 0;
 
-    // TODO should I reset the frame sync??
+    // Set the frame sync in IDLE mode
+    int32_t res = phyRadioFrameSyncSetMode(&inst->frame_sync, PHY_RADIO_FRAME_SYNC_MODE_IDLE);
+    if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+        return res;
+    }
+
+    res = STATIC_QUEUE_INIT(&inst->static_queue, inst->items, PHY_RADIO_NUM_ITEMS_SLOTS);
+    if (res != STATIC_QUEUE_SUCCESS) {
+        return res;
+    }
 
     // Initialize all queues
     for (uint32_t i = 0; i < PHY_RADIO_NUM_SLOTS; i++) {
@@ -1095,13 +1099,17 @@ static int32_t initTdmaScheduler(phyRadioTdma_t *inst, const phyRadioTdmaInit_t 
     inst->current_slot  = 0;
     inst->sync_counter  = 0;
     inst->in_flight     = false;
+    inst->active_item   = NULL;
     inst->frame_counter = 0;
+    inst->sync_interval = 1; // Default is to send on every slot
+
+    inst->fe_slot_target       = 0;
+    inst->scan_timeout_ms      = 0;
+    inst->packet_delay_time_us = 0;
 
     inst->phy_radio_inst = init_struct->phy_radio_inst;
     inst->hal_interface  = init_struct->hal_interface;
     inst->hal_radio_inst = init_struct->hal_radio_inst;
-
-    // TODO check all necessary init stuff
 
     const phyRadioFrameSyncInit_t frame_sync_init = {
         .phy_radio_inst = init_struct->phy_radio_inst,
@@ -1345,7 +1353,6 @@ static int32_t manageStartSyncEvent(phyRadio_t *inst, uint16_t slot_index) {
     // New sync detected, reset the counters
     inst->tdma_scheduler.current_slot = 0;
 
-    // TODO not sure if this really is necessary..
     // Set the mandatory peripheral sync RX slot
     inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].main_type    = PHY_RADIO_SLOT_RX;
     inst->tdma_scheduler.slot[PHY_RADIO_PERIPHERAL_RX_SLOT].current_type = PHY_RADIO_SLOT_RX;
@@ -1687,8 +1694,6 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
     gpio_set_dir(HAL_RADIO_PIN_TX_RX, GPIO_OUT);
 #endif
 
-    inst->tdma_scheduler.scan_timeout_ms = 0;
-
     // Init the RX buffer
     if(cBufferInit(&inst->rx_buffer, inst->rx_byte_array, PHY_RADIO_RX_BUFFER_SIZE) != C_BUFFER_SUCCESS) {
         return PHY_RADIO_GEN_ERROR;
@@ -1844,8 +1849,14 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst) {
         return PHY_RADIO_NULL_ERROR;
     }
 
+    // Set the frame sync in IDLE mode
+    int32_t res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_IDLE);
+    if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+        return res;
+    }
+
     // Cancel any active timers
-    int32_t res = PHY_RADIO_SUCCESS;
+    res = PHY_RADIO_SUCCESS;
     if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
         return res;
     }
@@ -1858,8 +1869,6 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst) {
     }
 
     inst->sync_state.mode = PHY_RADIO_MODE_ALOHA;
-
-    // TODO set frame sync to relevant value
 
     return PHY_RADIO_SUCCESS;
 }

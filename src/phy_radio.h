@@ -211,7 +211,6 @@ struct phyRadioSlotItem {
 
 // Complete scheduler structure
 typedef struct {
-    uint8_t              my_address;
     halRadio_t          *hal_radio_inst;
     halRadioInterface_t *hal_interface;
     phyRadio_t          *phy_radio_inst;
@@ -241,7 +240,6 @@ typedef struct {
     uint16_t frame_counter; // Keeping track of number of slots in a superframe
     uint16_t sync_interval; // Keeping track of number of slots in a superframe
     uint16_t sync_counter;  // Keeping track of frames since last sync
-    uint32_t hal_bitrate;
 
     // ForEach context for slot operations
     uint8_t fe_slot_target;
