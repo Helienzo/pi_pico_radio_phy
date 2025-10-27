@@ -413,15 +413,11 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
         // We do not have time for this packet, wait for next slot
         tdma_scheduler->active_item = NULL;
 
-        /*
-        // TODO this would be nice, but the phy is currently the only way to queue messages
         // Clear the packet queue for this slots and notify that the remaining messages has been canceled
         if ((res = clearAndNotifyPacketQueueInSlot(inst, tdma_scheduler, slot)) != STATIC_QUEUE_SUCCESS) {
             return res;
         }
-        */
 
-        // This is not a bug push the packet to the next send slot
         return PHY_RADIO_SUCCESS;
     }
 
@@ -844,6 +840,55 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
     return HAL_RADIO_CB_SUCCESS;
 }
 
+static int32_t queuePeakOnTxQueue(phyRadioTdma_t*     scheduler,
+                                  phyRadioPacket_t**  pkt)
+{
+    // Get the next item from the queue without removing it
+    staticQueueItem_t* item;
+    int32_t            result = staticQueuePeak(&scheduler->static_queue, &item);
+
+    // Copy the data to the input parameter
+    if (result == STATIC_QUEUE_SUCCESS) {
+        phyRadioSlotItem_t* queue_item = CONTAINER_OF(item, phyRadioSlotItem_t, node);
+        *pkt = queue_item->pkt;
+    }
+
+    return result;
+}
+
+static int32_t queuePopFromTxQueue(phyRadioTdma_t*     scheduler,
+                                   phyRadioPacket_t**  pkt)
+{
+    // Get the next item from the queue
+    staticQueueItem_t* item;
+    int32_t            result = staticQueuePop(&scheduler->static_queue, &item);
+
+    // Copy the data to the input parameter
+    if (result == STATIC_QUEUE_SUCCESS) {
+        phyRadioSlotItem_t* queue_item = CONTAINER_OF(item, phyRadioSlotItem_t, node);
+        *pkt = queue_item->pkt;
+        queue_item->pkt->_phy_queue_item = NULL;
+    }
+
+    return result;
+}
+
+static int32_t queuePutInTxQueue(phyRadioTdma_t* scheduler, phyRadioPacket_t*   packet)
+{
+    // Get the next item to which we want to write data
+    staticQueueItem_t* item;
+    int32_t            result = staticQueuePut(&scheduler->static_queue, &item);
+
+    // Add write data to the queue item
+    if (result == STATIC_QUEUE_SUCCESS) {
+        phyRadioSlotItem_t * next = CONTAINER_OF(item, phyRadioSlotItem_t, node);
+        next->pkt = packet;
+        packet->_phy_queue_item = next;
+    }
+
+    return result;
+}
+
 static int32_t queuePutInSlot(phyRadioTdma_t*     scheduler,
                               uint8_t             slot,
                               phyRadioPacket_t*   packet)
@@ -926,12 +971,6 @@ static int32_t queuePeakOnSlot(phyRadioTdma_t*     scheduler,
     return result;
 }
 
-static int32_t queueClearSlot(phyRadioTdma_t* scheduler,
-                              uint8_t         slot)
-{
-    return staticQueueClear(&scheduler->slot[slot].static_queue);
-}
-
 static int32_t clearAndNotifyPacketQueueInSlot(phyRadio_t *inst, phyRadioTdma_t *scheduler, uint8_t slot) {
     if (slot >= PHY_RADIO_NUM_SLOTS) {
         return PHY_RADIO_INVALID_SLOT;
@@ -974,23 +1013,28 @@ static int32_t clearAndNotifyPacketQueue(phyRadio_t *inst, phyRadioTdma_t *sched
     scheduler->in_flight = false;
     scheduler->active_item = NULL;
 
+    // Clear packets in the common queue
+    phyRadioPacket_t* phy_packet = NULL;
+    while(!staticQueueEmpty(&inst->tdma_scheduler.static_queue)) {
+        if ((res = queuePopFromTxQueue(&inst->tdma_scheduler, &phy_packet)) != STATIC_QUEUE_SUCCESS) {
+            if (res == STATIC_QUEUE_EMPTY) {
+                break;
+            }
+            return PHY_RADIO_QUEUE_ERROR;
+        }
+
+        // Notify that the packet failed
+        if (phy_packet->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
+            if ((res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+                return res;
+            }
+        }
+    }
+
     // Clear the queue of any active messages
     for (uint8_t slot = 0; slot < PHY_RADIO_NUM_SLOTS; slot++) {
-        phyRadioPacket_t* phy_packet = NULL;
-        while(!staticQueueEmpty(&scheduler->slot[slot].static_queue)) {
-            if ((res = queuePopFromSlot(scheduler, slot, &phy_packet)) != STATIC_QUEUE_SUCCESS) {
-                if (res == STATIC_QUEUE_EMPTY) {
-                    break;
-                }
-                return PHY_RADIO_QUEUE_ERROR;
-            }
-
-            // Notify that the packet failed
-            if (phy_packet->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
-                if ((res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
-                    return res;
-                }
-            }
+        if ((res = clearAndNotifyPacketQueueInSlot(inst, scheduler, slot)) != PHY_RADIO_SUCCESS) {
+            return res;
         }
     }
 
@@ -1044,6 +1088,12 @@ static int32_t initTdmaScheduler(phyRadioTdma_t *inst, const phyRadioTdmaInit_t 
 
     int32_t res = phyRadioFrameSyncInit(&inst->frame_sync, &frame_sync_init);
     if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+        return res;
+    }
+
+    // Init the common TX queue
+    res = STATIC_QUEUE_INIT(&inst->static_queue, inst->items, PHY_RADIO_NUM_ITEMS);
+    if (res != STATIC_QUEUE_SUCCESS) {
         return res;
     }
 
@@ -1317,8 +1367,24 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
     switch(inst->timer_interrupt) {
         case PHY_RADIO_INT_IDLE:
             break;
-        case PHY_RADIO_INT_FRAME_START_TIMER:
+        case PHY_RADIO_INT_FRAME_START_TIMER: {
             // Main context processing of a frame start
+            int32_t res = PHY_RADIO_SUCCESS;
+            phyRadioPacket_t* phy_packet = NULL;
+            // Move packets from the common queue to the slot queues
+            while(!staticQueueEmpty(&inst->tdma_scheduler.static_queue)) {
+                if ((res = queuePopFromTxQueue(&inst->tdma_scheduler, &phy_packet)) != STATIC_QUEUE_SUCCESS) {
+                    if (res == STATIC_QUEUE_EMPTY) {
+                        break;
+                    }
+                    return PHY_RADIO_QUEUE_ERROR;
+                }
+
+                if ((res = queuePutInSlot(&inst->tdma_scheduler, phy_packet->slot, phy_packet)) != STATIC_QUEUE_SUCCESS) {
+                    return res;
+                }
+            }
+
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
             switch(inst->sync_state.mode) {
                 case PHY_RADIO_MODE_CENTRAL:
@@ -1327,7 +1393,8 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
                     return processPeripheral(inst);
                 default:
                     break;
-            } break;
+            }
+        } break;
         case PHY_RADIO_INT_SLOT_START_TIMER:
             // Main context processing of a slot start
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
@@ -1711,8 +1778,8 @@ static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet) {
         packet->addr = PHY_RADIO_BROADCAST_ADDR;
     }
 
-    // Store the packet in the outgoing slot
-    res = queuePutInSlot(&inst->tdma_scheduler, packet->slot, packet);
+    // Store the packet in the common TX queue
+    res = queuePutInTxQueue(&inst->tdma_scheduler, packet);
     if (res != STATIC_QUEUE_SUCCESS) {
         return PHY_RADIO_QUEUE_ERROR;
     }
@@ -1758,13 +1825,58 @@ int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, int16_t num_frames
     return PHY_RADIO_SUCCESS;
 }
 
+static int32_t clearSlotCallback(staticQueue_t *queue, staticQueueItem_t *item) {
+    phyRadioSlotItem_t* slot_item = CONTAINER_OF(item, phyRadioSlotItem_t, node);
+    phyRadioPacket_t* phy_packet = slot_item->pkt;
+
+    // Get scheduler from the queue
+    phyRadioTdma_t *scheduler = CONTAINER_OF(queue, phyRadioTdma_t, static_queue);
+
+    // Check if this packet is for the slot we're clearing
+    if (phy_packet->slot == scheduler->fe_slot_target) {
+        // Get inst only when needed for callback
+        phyRadio_t *inst = CONTAINER_OF(scheduler, phyRadio_t, tdma_scheduler);
+
+        // Clear the back-reference
+        phy_packet->_phy_queue_item = NULL;
+
+        // Notify that the packet send failed
+        if (phy_packet->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
+            int32_t res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL);
+            if (res != PHY_RADIO_CB_SUCCESS) {
+                return res;
+            }
+        }
+
+        // Erase this packet from the queue
+        return STATIC_QUEUE_CB_ERASE;
+    }
+
+    return STATIC_QUEUE_CB_NEXT;
+}
+
 int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot) {
     if (inst == NULL) {
         return PHY_RADIO_NULL_ERROR;
     }
 
-    // Clear the slot and inform higher layers that the packets are lost
-    return clearAndNotifyPacketQueueInSlot(inst, &inst->tdma_scheduler, slot);
+    if (slot >= PHY_RADIO_NUM_SLOTS) {
+        return PHY_RADIO_INVALID_SLOT;
+    }
+
+    phyRadioTdma_t *scheduler = &inst->tdma_scheduler;
+    int32_t res = PHY_RADIO_SUCCESS;
+
+    // Store the slot number in the scheduler for the callback
+    scheduler->fe_slot_target = slot;
+
+    // Iterate through common queue and erase packets for this slot
+    if ((res = staticQueueForEach(&scheduler->static_queue, clearSlotCallback)) != STATIC_QUEUE_SUCCESS) {
+        return res;
+    }
+
+    // Clear the slot queue and inform higher layers that the packets are lost
+    return clearAndNotifyPacketQueueInSlot(inst, scheduler, slot);
 }
 
 int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame) {
@@ -1798,13 +1910,17 @@ int32_t phyRadioRemoveFromSlot(phyRadio_t *inst, phyRadioPacket_t *pkt) {
         return PHY_RADIO_SUCCESS;
     }
 
-    // Use the back-reference to remove from queue
-    int32_t res = staticQueueErase(&scheduler->slot[pkt->slot].static_queue,
-                                   &pkt->_phy_queue_item->node);
-
     // TODO perhaps we need to do something special here
     if (scheduler->active_item == pkt) {
         LOG("ACTIVE packet remove\n");
+    }
+
+    // Use the back-reference to remove from queue, first we try the TX common queue
+    int32_t res = PHY_RADIO_SUCCESS;
+    if ((res = staticQueueErase(&scheduler->static_queue, &pkt->_phy_queue_item->node)) != STATIC_QUEUE_SUCCESS) {
+        // The packet was not in the common queue, check the slot queue
+        res = staticQueueErase(&scheduler->slot[pkt->slot].static_queue,
+                                    &pkt->_phy_queue_item->node);
     }
 
     // Notify that the packet send failed

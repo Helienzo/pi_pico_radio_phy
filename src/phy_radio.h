@@ -42,8 +42,12 @@ extern "C" {
 #define PHY_RADIO_NUM_SLOTS (PHY_RADIO_NUM_SLOTS_IN_FRAME)
 #endif /* PHY_RADIO_NUM_SLOTS */
 
+#ifndef PHY_RADIO_NUM_ITEMS
+#define PHY_RADIO_NUM_ITEMS (6)
+#endif /* PHY_RADIO_NUM_ITEMS */
+
 #ifndef PHY_RADIO_NUM_ITEMS_SLOTS
-#define PHY_RADIO_NUM_ITEMS_SLOTS (4)
+#define PHY_RADIO_NUM_ITEMS_SLOTS (3)
 #endif /* PHY_RADIO_NUM_ITEMS_SLOTS */
 
 #ifndef PHY_RADIO_SYNC_TIMEOUT
@@ -212,6 +216,10 @@ typedef struct {
     halRadio_t          *hal_radio_inst;
     halRadioInterface_t *hal_interface;
     phyRadio_t          *phy_radio_inst;
+
+    // Global TX queue
+    phyRadioSlotItem_t items[PHY_RADIO_NUM_ITEMS]; // Circular buffer of slot items
+    staticQueue_t      static_queue;
 
     // Each slot can hold a number of packets
     struct {
