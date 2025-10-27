@@ -22,9 +22,18 @@
 
 #include "phy_radio_frame_sync.h"
 #include "string.h"
+#include <stdarg.h>
+
+// Weakly defined logging function - can be overridden by user
+__attribute__((weak)) void radio_log(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+}
 
 #ifndef LOG
-#define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
+#define LOG(f_, ...) radio_log((f_), ##__VA_ARGS__)
 #endif
 
 #ifndef LOG_DEBUG
@@ -36,7 +45,7 @@
 #endif
 
 #ifndef LOG_TIMER_ERROR
-#define LOG_TIMER_ERROR(f_, ...) printf((f_), ##__VA_ARGS__)
+#define LOG_TIMER_ERROR(f_, ...) radio_log((f_), ##__VA_ARGS__)
 #endif
 
 #ifndef UNUSED
