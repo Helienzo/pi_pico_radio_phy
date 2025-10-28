@@ -92,6 +92,7 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT,
     PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD,
     PHY_RADIO_FRAME_SYNC_INT_SLOT_START,
+    PHY_RADIO_FRAME_SYNC_INT_ERROR,
 } phyRadioFrameSyncInterruptEvent_t;
 
 /**
@@ -165,6 +166,13 @@ typedef struct {
  * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSyncInit_t *init_struct);
+
+/**
+ * Initialize the frame sync module
+ * Input: phyRadioFrameSync instance
+ * Returns: phyRadioFrameSyncErr_t
+ */
+int32_t phyRadioFrameSyncDeInit(phyRadioFrameSync_t *inst);
 
 /**
  * This function should be triggered on each new incomming sync packet

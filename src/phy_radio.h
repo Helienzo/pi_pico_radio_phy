@@ -300,6 +300,13 @@ struct phyRadio {
 int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t address);
 
 /**
+ * DeInitialize the phy radio module
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioDeInit(phyRadio_t *inst);
+
+/**
  * Process the phy radio
  * Input: phyRadio instance
  * Returns: phyRadioErr_t

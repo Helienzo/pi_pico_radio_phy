@@ -310,6 +310,8 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
             int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_START_EVENT, inst->slot_index);
             return res;
         } break;
+        case PHY_RADIO_FRAME_SYNC_INT_ERROR:
+            return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
         default:
             break;
     }
@@ -381,6 +383,19 @@ int32_t phyRadioFrameSyncTimeLeftInSlot(phyRadioFrameSync_t *inst, uint8_t slot)
 
     // Compute difference between current active slot and the complete length of the slot
     return slot_length_us - time_in_slot;
+}
+
+int32_t phyRadioFrameSyncDeInit(phyRadioFrameSync_t *inst) {
+    int32_t res = PHY_RADIO_FRAME_SYNC_SUCCESS;
+
+    if ((res = phyRadioTimerDeInit(&inst->radio_timer)) != PHY_RADIO_TIMER_SUCCESS) {
+        LOG("Phy radio timer deinit failed %i", res);
+    }
+
+    inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
+    inst->mode            = PHY_RADIO_FRAME_SYNC_MODE_IDLE;
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
 int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSyncInit_t *init_struct) {

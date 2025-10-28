@@ -1666,11 +1666,32 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
     return res;
 }
 
+int32_t phyRadioDeInit(phyRadio_t *inst) {
+    int32_t res = PHY_RADIO_SUCCESS;
+
+    // Cancel any active timers
+    if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
+        LOG("Failed to cancel PHY timers\n");
+    }
+
+    if ((res = phyRadioFrameSyncDeInit(&inst->tdma_scheduler.frame_sync)) != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+        LOG("Failed to deinit frame sync\n");
+    }
+
+    if ((res = resetTdmaScheduler(&inst->tdma_scheduler)) != PHY_RADIO_SUCCESS) {
+        LOG("Failed to reset tdma scheduler\n");
+    }
+
+    return PHY_RADIO_SUCCESS;
+}
+
 int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t address) {
 
     if (inst == NULL || interface == NULL || interface->sent_cb == NULL || interface->packet_cb == NULL || interface->sync_state_cb == NULL) {
         return PHY_RADIO_NULL_ERROR;
     }
+
+    memset(inst, 0, sizeof(phyRadio_t));
 
     // Init the halRadio and set the receiver address
     halRadioConfig_t hal_config = {
