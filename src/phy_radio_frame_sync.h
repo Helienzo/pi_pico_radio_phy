@@ -256,6 +256,14 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst);
  */
 int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t *frame);
 
+/**
+ * Get the current frame config
+ * Input: Frame sync instance
+ * Input: Frame configuration to populate
+ * Returns: phyRadioFrameSyncErr_t
+ */
+int32_t phyRadioFrameSyncGetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t **frame);
+
 #ifdef __cplusplus
 }
 #endif

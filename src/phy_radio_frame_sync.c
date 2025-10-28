@@ -500,6 +500,12 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
+int32_t phyRadioFrameSyncGetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t **frame) {
+    *frame = inst->frame_config;
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
 int32_t phyRadioFrameSyncClearCustomData(phyRadioFrameSync_t *inst) {
     if (inst == NULL) {
         return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
