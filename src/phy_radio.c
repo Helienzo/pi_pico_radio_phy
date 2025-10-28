@@ -44,7 +44,7 @@ __attribute__((weak)) void radio_log(const char *format, ...) {
 #else
 #define LOG(f_, ...)
 #define LOG_TIMER_ERROR(f_, ...)
-#endif /* PHY_RADIO_LOG_ENABLE  */
+#endif /* PHY_RADIO_LOG_ENABLE */
 
 #ifdef PHY_RADIO_LOG_DEBUG_ENABLE
 #define LOG_DEBUG(f_, ...) radio_log((f_), ##__VA_ARGS__)
