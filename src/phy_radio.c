@@ -146,7 +146,7 @@ static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst, uint16_t slot_inde
     // Check what slot we are currently in
     switch(tdma_scheduler->slot[tdma_scheduler->current_slot].current_type) {
         case PHY_RADIO_SLOT_TX: {
-            int32_t res = halRadioCancelReceive(&inst->hal_radio_inst);
+            int32_t res = halRadioCancelReceive(&inst->hal_radio_inst, false);
 
             if (res != HAL_RADIO_SUCCESS) {
                 LOG("Failed to cancel %i\n",res);
@@ -175,7 +175,7 @@ static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst, uint16_t slot_inde
             int32_t res = PHY_RADIO_SUCCESS;
             if (inst->tdma_scheduler.in_flight) {
                 // A packet failed to complete it's transmission, cancel TX mode.
-                if ((res = halRadioCancelTransmit(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
+                if ((res = halRadioCancelTransmit(&inst->hal_radio_inst, false)) != HAL_RADIO_SUCCESS) {
                     return res;
                 }
                 // The management of this will be done in main context
@@ -314,7 +314,7 @@ static int32_t manageSlotEndGuardTimerInterrupt(phyRadio_t *inst, uint16_t slot_
                     return mode;
                 } else if (mode == HAL_RADIO_RX_ACTIVE) {
                     int32_t res = HAL_RADIO_SUCCESS;
-                    if ((res = halRadioCancelReceive(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
+                    if ((res = halRadioCancelReceive(&inst->hal_radio_inst, false)) != HAL_RADIO_SUCCESS) {
                         return res;
                     }
                 }
@@ -345,7 +345,7 @@ static int32_t manageSlotGuardTimerInterrupt(phyRadio_t *inst, uint16_t slot_ind
         case PHY_RADIO_SLOT_TX: {
 
             // If the next slot is TX first Cancel RX
-            int32_t res = halRadioCancelReceive(&inst->hal_radio_inst);
+            int32_t res = halRadioCancelReceive(&inst->hal_radio_inst, false);
 
             if (res != HAL_RADIO_SUCCESS) {
                 LOG("Failed to cancel %i\n",res);
@@ -357,7 +357,7 @@ static int32_t manageSlotGuardTimerInterrupt(phyRadio_t *inst, uint16_t slot_ind
             int32_t res = PHY_RADIO_SUCCESS;
             if (inst->tdma_scheduler.in_flight) {
                 // A packet failed to complete it's transmission, cancel TX mode.
-                if ((res = halRadioCancelTransmit(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
+                if ((res = halRadioCancelTransmit(&inst->hal_radio_inst, false)) != HAL_RADIO_SUCCESS) {
                     return res;
                 }
                 // The management of this will be done in main context
@@ -453,7 +453,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
     if (res != STATIC_QUEUE_SUCCESS) {
         if (res == STATIC_QUEUE_EMPTY) {
             // Be in standby during empty TX slots
-            if ((res = halRadioCancelTransmit(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
+            if ((res = halRadioCancelTransmit(&inst->hal_radio_inst, false)) != HAL_RADIO_SUCCESS) {
                 return res;
             }
             return HAL_RADIO_CB_DO_NOTHING;
@@ -1478,7 +1478,7 @@ static int32_t phyRadioManageFrameStart(phyRadio_t *inst) {
 }
 
 static inline int32_t sendAloha(phyRadio_t *inst, phyRadioPacket_t* packet) {
-    int32_t res = halRadioCancelReceive(&inst->hal_radio_inst);
+    int32_t res = halRadioCancelReceive(&inst->hal_radio_inst, true);
 
     if (res != HAL_RADIO_SUCCESS) {
         LOG("Cancel Failed\n");
