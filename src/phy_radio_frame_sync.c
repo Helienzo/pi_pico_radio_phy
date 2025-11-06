@@ -70,7 +70,7 @@ static int32_t new_frame_callback(phyRadioTimer_t *interface) {
     phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
-        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_ERROR;// PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
+        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
     } else {
         int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_NEW_FRAME_EVENT, 0);
         if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
