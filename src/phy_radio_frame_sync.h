@@ -65,6 +65,7 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_GEN_ERROR        = -22002,
     PHY_RADIO_FRAME_SYNC_SLOT_ERROR       = -22003,
     PHY_RADIO_FRAME_SYNC_MODE_ERROR       = -22004,
+    PHY_RADIO_FRAME_SYNC_FRAME_ERROR      = -22005,
     PHY_RADIO_FRAME_SYNC_FRAME_OVERFLOW   = -22015,
 } phyRadioFrameSyncErr_t;
 
@@ -92,6 +93,8 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT,
     PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD,
     PHY_RADIO_FRAME_SYNC_INT_SLOT_START,
+    PHY_RADIO_FRAME_SYNC_INT_SLOT_END_GUARD,
+    PHY_RADIO_FRAME_SYNC_INT_ERROR,
 } phyRadioFrameSyncInterruptEvent_t;
 
 /**
@@ -124,8 +127,10 @@ typedef struct {
     uint8_t             sync_message_array[PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE + C_BUFFER_ARRAY_OVERHEAD + HAL_RADIO_PACKET_OVERHEAD];
     cBuffer_t           sync_message_buf;
     phyRadioPacket_t    sync_packet;
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     uint8_t             sync_packet_gen_data[PHY_RADIO_SYNC_GEN_DATA_SIZE]; // Contains custom data configurable by higher layers
     uint8_t             sync_packet_received_gen_data[PHY_RADIO_SYNC_GEN_DATA_SIZE]; // Received custom data
+#endif
     
     // Frame management
     phyRadioFrameConfig_t *frame_config; // Pointer to the current frame config
@@ -134,7 +139,7 @@ typedef struct {
     // Timer management
     phyRadioTimer_t        radio_timer;
     phyRadioTimerConfig_t  timer_config;
-    volatile uint8_t       timer_interrupt;
+    volatile uint32_t      timer_interrupt;
 
     // Frame sync management
     // The actuall time it takes to send a sync message
@@ -163,6 +168,13 @@ typedef struct {
  * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSyncInit_t *init_struct);
+
+/**
+ * Initialize the frame sync module
+ * Input: phyRadioFrameSync instance
+ * Returns: phyRadioFrameSyncErr_t
+ */
+int32_t phyRadioFrameSyncDeInit(phyRadioFrameSync_t *inst);
 
 /**
  * This function should be triggered on each new incomming sync packet
@@ -253,6 +265,14 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst);
  * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t *frame);
+
+/**
+ * Get the current frame config
+ * Input: Frame sync instance
+ * Input: Frame configuration to populate
+ * Returns: phyRadioFrameSyncErr_t
+ */
+int32_t phyRadioFrameSyncGetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t **frame);
 
 #ifdef __cplusplus
 }

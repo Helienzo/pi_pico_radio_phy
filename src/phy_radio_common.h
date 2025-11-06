@@ -31,7 +31,6 @@ extern "C" {
 #include "c_buffer.h"
 #include "pico/stdlib.h"
 
-
 #ifndef PHY_RADIO_SYNC_GEN_DATA_SIZE
 #define PHY_RADIO_SYNC_GEN_DATA_SIZE (1)
 #endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
@@ -58,7 +57,7 @@ extern "C" {
 #endif /* PHY_RADIO_ACTIVE_SLOT_TIME_US */
 
 #ifndef PHY_RADIO_NUM_TICKS_IN_SLOT
-#define PHY_RADIO_NUM_TICKS_IN_SLOT (2)
+#define PHY_RADIO_NUM_TICKS_IN_SLOT (3)
 #endif /* PHY_RADIO_NUM_TICKS_IN_SLOT */ 
 
 #ifndef PHY_RADIO_SLOT_TIME_US 
@@ -73,6 +72,10 @@ extern "C" {
 #ifndef PHY_RADIO_FRAME_GUARD_US
 #define PHY_RADIO_FRAME_GUARD_US (200)
 #endif /* PHY_RADIO_FRAME_GUARD_US */
+
+#ifndef PHY_RADIO_SLOT_END_GUARD_US
+#define PHY_RADIO_SLOT_END_GUARD_US (300)
+#endif /* PHY_RADIO_SLOT_END_GUARD_US */
 
 #ifndef PHY_RADIO_FRAME_TIME_US
 #define PHY_RADIO_FRAME_TIME_US (PHY_RADIO_NUM_SLOTS_IN_FRAME * PHY_RADIO_SLOT_TIME_US + PHY_RADIO_FRAME_GUARD_US)
@@ -127,6 +130,8 @@ typedef struct {
     uint16_t sync_interval; // How often to send the sync
 
     uint16_t end_guard; // Special guard at the end of the slot
+
+    uint16_t slot_end_guard_us;    // The shared slot end guard time
 } phyRadioFrameConfig_t;
 
 typedef enum {
@@ -140,6 +145,8 @@ typedef enum {
     FRAME_SYNC_FIRST_SLOT_START_EVENT,
     // This event is triggered at the start of a slot, after this follows a guard period
     FRAME_SYNC_SLOT_GUARD_EVENT,
+    // This event is triggered when it is time to turn of RX if nothing has been received
+    FRAME_SYNC_SLOT_END_GUARD_EVENT,
     // This event is triggered at the end of the slot guard, after this the active part of the slot follows
     FRAME_SYNC_SLOT_START_EVENT,
 } phyRadioFrameSyncEvent_t;

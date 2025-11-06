@@ -22,22 +22,39 @@
 
 #include "phy_radio_frame_sync.h"
 #include "string.h"
+#include <stdarg.h>
 
-#ifndef LOG
-#define LOG(f_, ...) printf((f_), ##__VA_ARGS__)
-#endif
+// Weakly defined logging function - can be overridden by user
+__attribute__((weak)) void radio_log(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+}
 
-#ifndef LOG_DEBUG
-#define LOG_DEBUG(f_, ...)// printf((f_), ##__VA_ARGS__)
-#endif
+#ifndef PHY_RADIO_FRAME_SYNC_LOG_ENABLE
+#define PHY_RADIO_FRAME_SYNC_LOG_ENABLE (1)
+#endif /* PHY_RADIO_FRAME_SYNC_LOG_ENABLE */
 
-#ifndef LOG_V_DEBUG
-#define LOG_V_DEBUG(f_, ...)// printf((f_), ##__VA_ARGS__)
-#endif
+#if PHY_RADIO_FRAME_SYNC_LOG_ENABLE == 1
+#define LOG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#define LOG_TIMER_ERROR(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
+#define LOG(f_, ...)
+#define LOG_TIMER_ERROR(f_, ...)
+#endif /* PHY_RADIO_FRAME_SYNC_LOG_ENABLE */
 
-#ifndef LOG_TIMER_ERROR
-#define LOG_TIMER_ERROR(f_, ...) printf((f_), ##__VA_ARGS__)
-#endif
+#ifdef PHY_RADIO_FRAME_SYNC_LOG_DEBUG_ENABLE
+#define LOG_DEBUG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
+#define LOG_DEBUG(f_, ...)
+#endif /* PHY_RADIO_FRAME_SYNC_LOG_DEBUG_ENABLE */
+
+#ifdef PHY_RADIO_FRAME_SYNC_LOG_V_DEBUG_ENABLE
+#define LOG_V_DEBUG(f_, ...) radio_log((f_), ##__VA_ARGS__)
+#else
+#define LOG_V_DEBUG(f_, ...)
+#endif /* PHY_RADIO_FRAME_SYNC_LOG_V_DEBUG_ENABLE */
 
 #ifndef UNUSED
 #define UNUSED(x) (void)(x)
@@ -89,21 +106,27 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
                 interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
             } break;
             case 1: {
+                // This marks the start of the end guard, should allways be processed in interrupt context
+                int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_END_GUARD_EVENT, inst->slot_index);
+                if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                    inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+                }
+            } return true;
+            case 2: {
                 // This marks the start of the slot guard
                 inst->slot_start_time = time_us_64();
                 inst->slot_index++;
                 frame_event     = FRAME_SYNC_SLOT_GUARD_EVENT;
                 interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
             } break;
-            default:
+           default:
                 // Should never happen
                 break;
         }
     }
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
-        // Set interrupt flag
-        // If the radio is busy pass the task to the main context
+        // Radio is busy, process in main context
         inst->timer_interrupt = interrupt_event;
     } else {
         int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, frame_event, inst->slot_index);
@@ -183,11 +206,13 @@ int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket
     packet_header[1] = phy_pkt_type | (uint8_t)((inst->central_sync_msg_time >> PHY_RADIO_SYNC_MSG_TIME_MSB_SHIFT) &
                                                     PHY_RADIO_SYNC_MSG_TIME_MSB_MASK); // Write MSB
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     if (PHY_RADIO_SYNC_GEN_DATA_SIZE > 0) {
         for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
             cBufferPrependByte(inst->sync_packet.pkt_buffer, inst->sync_packet_gen_data[i]); // This is safe, lets not check retvals
         }
     }
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     // Add the phy and sync packet header
     cBufferPrependByte(inst->sync_packet.pkt_buffer, packet_header[0]); // This is safe, lets not check retvals
@@ -250,10 +275,12 @@ int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_
 
     int32_t res = syncWithCentral(inst, hal_packet->time, sync_msg_time);
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     // This is not very important, do it after the synchronization
     for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
         inst->sync_packet_received_gen_data[i] = cBufferReadByte(phy_packet->pkt_buffer);
     }
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     return res;
 }
@@ -289,6 +316,13 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
             int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_START_EVENT, inst->slot_index);
             return res;
         } break;
+        case PHY_RADIO_FRAME_SYNC_INT_SLOT_END_GUARD: {
+            inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
+            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_END_GUARD_EVENT, inst->slot_index);
+            return res;
+        } break;
+        case PHY_RADIO_FRAME_SYNC_INT_ERROR:
+            return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
         default:
             break;
     }
@@ -360,6 +394,19 @@ int32_t phyRadioFrameSyncTimeLeftInSlot(phyRadioFrameSync_t *inst, uint8_t slot)
 
     // Compute difference between current active slot and the complete length of the slot
     return slot_length_us - time_in_slot;
+}
+
+int32_t phyRadioFrameSyncDeInit(phyRadioFrameSync_t *inst) {
+    int32_t res = PHY_RADIO_FRAME_SYNC_SUCCESS;
+
+    if ((res = phyRadioTimerDeInit(&inst->radio_timer)) != PHY_RADIO_TIMER_SUCCESS) {
+        LOG("Phy radio timer deinit failed %i", res);
+    }
+
+    inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
+    inst->mode            = PHY_RADIO_FRAME_SYNC_MODE_IDLE;
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
 int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSyncInit_t *init_struct) {
@@ -449,7 +496,16 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     for (uint32_t i = 0; i < frame->num_slots; i++) {
         inst->_frame_ticks[tick_index] = frame->slots[i].slot_start_guard_us;
         tick_index++;
-        inst->_frame_ticks[tick_index] = frame->slots[i].slot_length_us;
+
+        // Double check that the slot_length is not shorter than the slot_end_guard that is invalid!
+        if (frame->slot_end_guard_us > frame->slots[i].slot_length_us) {
+            return PHY_RADIO_FRAME_SYNC_FRAME_ERROR;
+        }
+
+        // The slot end guard occurs during the slot_length and does not impact the total length of the slot
+        inst->_frame_ticks[tick_index] = frame->slots[i].slot_length_us - frame->slot_end_guard_us;
+        tick_index++;
+        inst->_frame_ticks[tick_index] = frame->slot_end_guard_us;
         tick_index++;
 
         // Sum the elements in the frame
@@ -462,10 +518,10 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     frame->frame_length_us = frame_length_us;
 
     // Prepare configuration
-    inst->timer_config.num_ticks = tick_index;
+    inst->timer_config.num_ticks     = tick_index;
     inst->timer_config.tick_sequence = inst->_frame_ticks;
-    inst->frame_duration         = frame->frame_length_us;
-    inst->float_frame_duration   = (float)frame->frame_length_us;
+    inst->frame_duration             = frame->frame_length_us;
+    inst->float_frame_duration       = (float)frame->frame_length_us;
 
     inst->frame_config = frame;
 
@@ -479,14 +535,22 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
+int32_t phyRadioFrameSyncGetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t **frame) {
+    *frame = inst->frame_config;
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
 int32_t phyRadioFrameSyncClearCustomData(phyRadioFrameSync_t *inst) {
     if (inst == NULL) {
         return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
     }
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     for (uint32_t i = 0; i < PHY_RADIO_SYNC_GEN_DATA_SIZE; i++) {
         inst->sync_packet_gen_data[i] = 0;
     }
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
@@ -500,9 +564,11 @@ int32_t phyRadioFrameSyncSetCustomData(phyRadioFrameSync_t *inst, uint8_t *data,
         return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
     }
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     for (uint32_t i = 0; i < data_size; i++) {
         inst->sync_packet_gen_data[i] = data[i];
     }
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
@@ -512,7 +578,9 @@ int32_t phyRadioFrameGetLatestCustomData(phyRadioFrameSync_t *inst, uint8_t **da
         return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
     }
 
+#if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     *data = inst->sync_packet_received_gen_data;
+#endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }

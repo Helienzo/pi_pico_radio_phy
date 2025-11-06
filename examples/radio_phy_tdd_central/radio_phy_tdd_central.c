@@ -74,8 +74,10 @@ static phyRadioFrameConfig_t frame_config = {
         {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SYNC_SLOT_TIME_US, .slot_end_guard_us = 0,},
         {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
         {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
+        {.slot_start_guard_us = PHY_RADIO_SLOT_GUARD_TIME_US, .slot_length_us = PHY_RADIO_ACTIVE_SLOT_TIME_US, .slot_end_guard_us = 0,},
     },
     .sync_interval = 8,
+    .slot_end_guard_us = PHY_RADIO_SLOT_END_GUARD_US,
     .end_guard     = PHY_RADIO_FRAME_GUARD_US,
 };
 
@@ -202,6 +204,8 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
         case PHY_RADIO_TX_SLOT_START:
            // Called once every time a new TX slot starts
            break;
+        case PHY_RADIO_FRAME_START:
+            break;
         default:
             // We should never end up here!
             return PHY_RADIO_CB_ERROR_INVALID;
@@ -249,7 +253,7 @@ int main()
         device_error();
     }
 
-    if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 2, PHY_RADIO_INFINITE_SLOT_TYPE)) != PHY_RADIO_SUCCESS) {
+    if ((res = phyRadioReceiveOnSlot(&my_instance.phy_radio_inst, 2)) != PHY_RADIO_SUCCESS) {
         LOG("RADIO SET MODE FAILED! %i\n", res);
         device_error();
     }
@@ -286,6 +290,7 @@ int main()
 
 static void device_error() {
     // Forever blink fast
+    phyRadioDeInit(&my_instance.phy_radio_inst);
     while (true) {
         pico_set_led(true);
         sleep_ms(100);

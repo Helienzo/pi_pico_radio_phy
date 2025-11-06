@@ -42,8 +42,12 @@ extern "C" {
 #define PHY_RADIO_NUM_SLOTS (PHY_RADIO_NUM_SLOTS_IN_FRAME)
 #endif /* PHY_RADIO_NUM_SLOTS */
 
+#ifndef PHY_RADIO_NUM_ITEMS
+#define PHY_RADIO_NUM_ITEMS (6)
+#endif /* PHY_RADIO_NUM_ITEMS */
+
 #ifndef PHY_RADIO_NUM_ITEMS_SLOTS
-#define PHY_RADIO_NUM_ITEMS_SLOTS (4)
+#define PHY_RADIO_NUM_ITEMS_SLOTS (3)
 #endif /* PHY_RADIO_NUM_ITEMS_SLOTS */
 
 #ifndef PHY_RADIO_SYNC_TIMEOUT
@@ -87,8 +91,6 @@ extern "C" {
 #ifndef PHY_RADIO_DEFAULT_TX_POWER_DBM
 #define PHY_RADIO_DEFAULT_TX_POWER_DBM (0)
 #endif /* PHY_RADIO_DEFAULT_TX_POWER_DBM */
-
-#define PHY_RADIO_INFINITE_SLOT_TYPE (-1)
 
 typedef enum {
     PHY_RADIO_INTERRUPT_IN_QUEUE = 1,
@@ -140,6 +142,7 @@ typedef enum {
     PHY_RADIO_RE_SYNC,       // On new sync message during peripheral mode
     PHY_RADIO_CONFLICT_SYNC, // Conflicting sync from other central device
     PHY_RADIO_SYNC_LOST,     // On new sync message during peripheral mode
+    PHY_RADIO_FRAME_START, // At the start of a RX slot
     PHY_RADIO_RX_SLOT_START, // At the start of a RX slot
     PHY_RADIO_TX_SLOT_START, // At the start of TX slot (Ater the first package is triggered)
     PHY_RADIO_SCAN_TIMEOUT,  // If a scan timed out with no device found
@@ -208,10 +211,13 @@ struct phyRadioSlotItem {
 
 // Complete scheduler structure
 typedef struct {
-    uint8_t              my_address;
     halRadio_t          *hal_radio_inst;
     halRadioInterface_t *hal_interface;
     phyRadio_t          *phy_radio_inst;
+
+    // Global TX queue
+    phyRadioSlotItem_t items[PHY_RADIO_NUM_ITEMS]; // Circular buffer of slot items
+    staticQueue_t      static_queue;
 
     // Each slot can hold a number of packets
     struct {
@@ -220,10 +226,8 @@ typedef struct {
         staticQueue_t      static_queue;
 
         // Slot type
-        phyRadioSlotType_t type;
-
-        // Time as type
-        uint32_t num_frames_as_type;
+        phyRadioSlotType_t current_type;
+        phyRadioSlotType_t main_type;
     } slot[PHY_RADIO_NUM_SLOTS];
 
     uint8_t            current_slot;
@@ -236,7 +240,9 @@ typedef struct {
     uint16_t frame_counter; // Keeping track of number of slots in a superframe
     uint16_t sync_interval; // Keeping track of number of slots in a superframe
     uint16_t sync_counter;  // Keeping track of frames since last sync
-    uint32_t hal_bitrate;
+
+    // ForEach context for slot operations
+    uint8_t fe_slot_target;
 
     // Module responsible for syncronizing internal timers
     phyRadioFrameSync_t frame_sync;
@@ -277,8 +283,9 @@ struct phyRadio {
     halRadioInterface_t hal_interface;
 
     // Timer management
-    phyRadioTaskTimer_t  task_timer;
-    volatile uint8_t     timer_interrupt;
+    phyRadioTaskTimer_t      task_timer;
+    phyRadioFastTaskTimer_t  fast_task_timer;
+    volatile uint8_t         timer_interrupt;
 
     // Phy TDMA Scheduler
     phyRadioTdma_t     tdma_scheduler;
@@ -291,6 +298,13 @@ struct phyRadio {
  * Returns: phyRadioErr_t
  */
 int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t address);
+
+/**
+ * DeInitialize the phy radio module
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioDeInit(phyRadio_t *inst);
 
 /**
  * Process the phy radio
@@ -362,13 +376,20 @@ int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
 
 /**
- * Receive data on a specific slot. This schedules a slot as RX for a specified time.
+ * Receive data on a specific slot. Will automatically switch to TX if send on the same slot
  * Input: phyRadio instance
  * Input: Targeted slot
- * Input: Num of frames as RX. -1 indicates indefinite RX on this slot
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot, int16_t num_frames);
+int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot);
+
+/**
+ * Set a specific slot as IDLE.
+ * Input: phyRadio instance
+ * Input: Targeted slot
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioSetSlotIdle(phyRadio_t *inst, uint8_t slot);
 
 /**
  * Schedule a packet scanning during a slot interval and on a specific channel.
@@ -395,6 +416,22 @@ int32_t phyRadioClearSlot(phyRadio_t *inst, uint8_t slot);
  * Returns: phyRadioErr_t
  */
 int32_t phyRadioRemoveFromSlot(phyRadio_t *inst, phyRadioPacket_t *pkt);
+
+/**
+ * Write to custom data field in SYNC message
+ * Input: phyRadio instance
+ * Input: Pointer to data
+ * Input: Num Bytes in data
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioSetCustomData(phyRadio_t *inst, uint8_t *data, uint32_t data_size);
+
+/**
+ * Clear the custom data field in SYNC message, set to 0x00 for all bytes
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioClearCustomData(phyRadio_t *inst);
 
 #ifdef __cplusplus
 }
