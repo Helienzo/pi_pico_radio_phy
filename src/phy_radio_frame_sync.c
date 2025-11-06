@@ -106,10 +106,12 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
                 interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
             } break;
             case 1: {
-                // This markes the end of the guard and start of the active slot part
-                frame_event     = FRAME_SYNC_SLOT_END_GUARD_EVENT;
-                interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_END_GUARD;
-            } break;
+                // This marks the start of the end guard, should allways be processed in interrupt context
+                int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_END_GUARD_EVENT, inst->slot_index);
+                if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                    inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+                }
+            } return true;
             case 2: {
                 // This marks the start of the slot guard
                 inst->slot_start_time = time_us_64();
@@ -124,12 +126,8 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
     }
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
-        // Set interrupt flag
-        if (frame_event == FRAME_SYNC_FIRST_SLOT_START_EVENT) {
-            inst->timer_interrupt = interrupt_event;
-        } else {
-            inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_ERROR; //interrupt_event
-        }
+        // Radio is busy, process in main context
+        inst->timer_interrupt = interrupt_event;
     } else {
         int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, frame_event, inst->slot_index);
         if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {

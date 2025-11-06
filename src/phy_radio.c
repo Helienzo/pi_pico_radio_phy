@@ -297,15 +297,28 @@ static int32_t manageSlotEndGuardTimerInterrupt(phyRadio_t *inst, uint16_t slot_
             // Ignore this interrupt
         } break;
         case PHY_RADIO_SLOT_RX:
-            // Trigger main context processing
-            inst->timer_interrupt = PHY_RADIO_INT_SLOT_END_GUARD_TIMER;
 
             #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
                 gpio_put(HAL_RADIO_PIN_TX_RX, 0);
                 gpio_put(HAL_RADIO_PIN_TX_RX, 1);
                 gpio_put(HAL_RADIO_PIN_TX_RX, 0);
             #endif
-
+            // Check if radio is busy (mutex locked) - if so, set emergency abort flag
+            if (halRadioCheckBusy(&inst->hal_radio_inst) == HAL_RADIO_BUSY) {
+                // Set emergency abort flag in HAL radio (safe to call from interrupt context)
+                halRadioSetRxAbort(&inst->hal_radio_inst);
+            } else {
+                int32_t mode = halRadioGetMode(&inst->hal_radio_inst);
+                if (mode < HAL_RADIO_SUCCESS) {
+                    // Some error occured
+                    return mode;
+                } else if (mode == HAL_RADIO_RX_ACTIVE) {
+                    int32_t res = HAL_RADIO_SUCCESS;
+                    if ((res = halRadioCancelReceive(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
+                        return res;
+                    }
+                }
+            }
             break;
         default:
             // Do nothing
@@ -1650,18 +1663,7 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
             }
             break;
         case PHY_RADIO_INT_SLOT_END_GUARD_TIMER: {
-            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
-            int32_t mode = halRadioGetMode(&inst->hal_radio_inst);
-            if (mode < HAL_RADIO_SUCCESS) {
-                // Some error occured
-                return mode;
-            } else if (mode == HAL_RADIO_RX_ACTIVE) {
-                int32_t res = HAL_RADIO_SUCCESS;
-                if ((res = halRadioCancelReceive(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
-                    return res;
-                }
-            }
-        } break;
+       } break;
         case PHY_RADIO_INT_SCAN_TIMER: {
             // Manage timer tasks
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
@@ -1702,7 +1704,7 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
             // This indicates that a bad interrupt occured
             LOG("Hal Radio Receive failed\n");
             // Just restart radio reception
-            res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, true);
+            res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, false);
             break;
         default:
             break;
@@ -1831,7 +1833,7 @@ int32_t phyRadioSetScanMode(phyRadio_t *inst, uint32_t timeout_ms) {
 
     // Scan for the broadcast address
     inst->hal_interface.pkt_buffer = &inst->rx_buffer;
-    res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, true);
+    res = halRadioReceivePackageNB(&inst->hal_radio_inst, &inst->hal_interface, false);
 
     if (res != HAL_RADIO_SUCCESS) {
         return res;
