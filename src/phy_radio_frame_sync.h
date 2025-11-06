@@ -65,6 +65,7 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_GEN_ERROR        = -22002,
     PHY_RADIO_FRAME_SYNC_SLOT_ERROR       = -22003,
     PHY_RADIO_FRAME_SYNC_MODE_ERROR       = -22004,
+    PHY_RADIO_FRAME_SYNC_FRAME_ERROR      = -22005,
     PHY_RADIO_FRAME_SYNC_FRAME_OVERFLOW   = -22015,
 } phyRadioFrameSyncErr_t;
 
@@ -92,6 +93,7 @@ typedef enum {
     PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT,
     PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD,
     PHY_RADIO_FRAME_SYNC_INT_SLOT_START,
+    PHY_RADIO_FRAME_SYNC_INT_SLOT_END_GUARD,
     PHY_RADIO_FRAME_SYNC_INT_ERROR,
 } phyRadioFrameSyncInterruptEvent_t;
 
@@ -137,7 +139,7 @@ typedef struct {
     // Timer management
     phyRadioTimer_t        radio_timer;
     phyRadioTimerConfig_t  timer_config;
-    volatile uint8_t       timer_interrupt;
+    volatile uint32_t      timer_interrupt;
 
     // Frame sync management
     // The actuall time it takes to send a sync message

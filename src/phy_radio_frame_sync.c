@@ -70,7 +70,7 @@ static int32_t new_frame_callback(phyRadioTimer_t *interface) {
     phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
-        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
+        inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_ERROR;// PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
     } else {
         int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_NEW_FRAME_EVENT, 0);
         if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
@@ -106,13 +106,18 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
                 interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
             } break;
             case 1: {
+                // This markes the end of the guard and start of the active slot part
+                frame_event     = FRAME_SYNC_SLOT_END_GUARD_EVENT;
+                interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_END_GUARD;
+            } break;
+            case 2: {
                 // This marks the start of the slot guard
                 inst->slot_start_time = time_us_64();
                 inst->slot_index++;
                 frame_event     = FRAME_SYNC_SLOT_GUARD_EVENT;
                 interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
             } break;
-            default:
+           default:
                 // Should never happen
                 break;
         }
@@ -120,8 +125,11 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
         // Set interrupt flag
-        // If the radio is busy pass the task to the main context
-        inst->timer_interrupt = interrupt_event;
+        if (frame_event == FRAME_SYNC_FIRST_SLOT_START_EVENT) {
+            inst->timer_interrupt = interrupt_event;
+        } else {
+            inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_ERROR; //interrupt_event
+        }
     } else {
         int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, frame_event, inst->slot_index);
         if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
@@ -310,6 +318,11 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
             int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_START_EVENT, inst->slot_index);
             return res;
         } break;
+        case PHY_RADIO_FRAME_SYNC_INT_SLOT_END_GUARD: {
+            inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
+            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_END_GUARD_EVENT, inst->slot_index);
+            return res;
+        } break;
         case PHY_RADIO_FRAME_SYNC_INT_ERROR:
             return PHY_RADIO_FRAME_SYNC_GEN_ERROR;
         default:
@@ -485,7 +498,16 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     for (uint32_t i = 0; i < frame->num_slots; i++) {
         inst->_frame_ticks[tick_index] = frame->slots[i].slot_start_guard_us;
         tick_index++;
-        inst->_frame_ticks[tick_index] = frame->slots[i].slot_length_us;
+
+        // Double check that the slot_length is not shorter than the slot_end_guard that is invalid!
+        if (frame->slot_end_guard_us > frame->slots[i].slot_length_us) {
+            return PHY_RADIO_FRAME_SYNC_FRAME_ERROR;
+        }
+
+        // The slot end guard occurs during the slot_length and does not impact the total length of the slot
+        inst->_frame_ticks[tick_index] = frame->slots[i].slot_length_us - frame->slot_end_guard_us;
+        tick_index++;
+        inst->_frame_ticks[tick_index] = frame->slot_end_guard_us;
         tick_index++;
 
         // Sum the elements in the frame
@@ -498,10 +520,10 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     frame->frame_length_us = frame_length_us;
 
     // Prepare configuration
-    inst->timer_config.num_ticks = tick_index;
+    inst->timer_config.num_ticks     = tick_index;
     inst->timer_config.tick_sequence = inst->_frame_ticks;
-    inst->frame_duration         = frame->frame_length_us;
-    inst->float_frame_duration   = (float)frame->frame_length_us;
+    inst->frame_duration             = frame->frame_length_us;
+    inst->float_frame_duration       = (float)frame->frame_length_us;
 
     inst->frame_config = frame;
 

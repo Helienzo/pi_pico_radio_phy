@@ -68,6 +68,7 @@ typedef enum {
     PHY_RADIO_INT_FRAME_START_TIMER,
     PHY_RADIO_INT_SLOT_GUARD_START_TIMER, // Currently unused
     PHY_RADIO_INT_SLOT_START_TIMER,
+    PHY_RADIO_INT_SLOT_END_GUARD_TIMER,
     PHY_RADIO_INT_SCAN_TIMER,
     PHY_RADIO_INT_SEND_TIMER,
 } phyRadioInterruptEvent_t;
@@ -89,6 +90,7 @@ static int32_t queuePutFirstInSlot(phyRadioTdma_t* scheduler, uint8_t slot, phyR
 static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst, uint16_t slot_index);
 static int32_t manageNewFrameStartTimerInterrupt(phyRadio_t *inst, uint16_t slot_index);
 static int32_t manageSlotStartTimerInterrupt(phyRadio_t *inst, uint16_t slot_index);
+static int32_t manageSlotEndGuardTimerInterrupt(phyRadio_t *inst, uint16_t slot_index);
 static int32_t manageSlotGuardTimerInterrupt(phyRadio_t *inst, uint16_t slot_index);
 static int32_t clearAndNotifyPacketQueueInSlot(phyRadio_t *inst, phyRadioTdma_t *scheduler, uint8_t slot);
 static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes);
@@ -245,6 +247,8 @@ static int32_t manageNewFrameStartTimerInterrupt(phyRadio_t *inst, uint16_t slot
 
     // Set the interrupt flag for next processing
     inst->timer_interrupt = PHY_RADIO_INT_FRAME_START_TIMER;
+
+    return PHY_RADIO_SUCCESS;
 }
 
 static int32_t manageSlotStartTimerInterrupt(phyRadio_t *inst, uint16_t slot_index) {
@@ -274,6 +278,34 @@ static int32_t manageSlotStartTimerInterrupt(phyRadio_t *inst, uint16_t slot_ind
             // Inidicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 0);
 #endif
+            break;
+        default:
+            // Do nothing
+            break;
+    }
+
+    return PHY_RADIO_SUCCESS;
+}
+
+static int32_t manageSlotEndGuardTimerInterrupt(phyRadio_t *inst, uint16_t slot_index) {
+    UNUSED(slot_index);
+    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
+
+    // Check what slot we are currently in
+    switch(tdma_scheduler->slot[tdma_scheduler->current_slot].current_type) {
+        case PHY_RADIO_SLOT_TX: {
+            // Ignore this interrupt
+        } break;
+        case PHY_RADIO_SLOT_RX:
+            // Trigger main context processing
+            inst->timer_interrupt = PHY_RADIO_INT_SLOT_END_GUARD_TIMER;
+
+            #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
+                gpio_put(HAL_RADIO_PIN_TX_RX, 0);
+                gpio_put(HAL_RADIO_PIN_TX_RX, 1);
+                gpio_put(HAL_RADIO_PIN_TX_RX, 0);
+            #endif
+
             break;
         default:
             // Do nothing
@@ -1549,6 +1581,8 @@ int32_t phyRadioFrameSyncCallback(phyRadio_t *inst, phyRadioFrameSyncEvent_t eve
             return manageSlotGuardTimerInterrupt(inst, slot_index);
         case FRAME_SYNC_SLOT_START_EVENT:
             return manageSlotStartTimerInterrupt(inst, slot_index);
+        case FRAME_SYNC_SLOT_END_GUARD_EVENT:
+            return manageSlotEndGuardTimerInterrupt(inst, slot_index);
         case FRAME_SYNC_ERROR_EVENT:
             // Fall through
         default:
@@ -1600,7 +1634,6 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
 
             // Notify that a new frame has started
             if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_FRAME_START, &inst->sync_state)) < PHY_RADIO_CB_SUCCESS) {
-                        LOG("proc fail 4 %i\n", res);
                 return res;
             }
         } break;
@@ -1615,8 +1648,20 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
                 default:
                     break;
             }
-
             break;
+        case PHY_RADIO_INT_SLOT_END_GUARD_TIMER: {
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            int32_t mode = halRadioGetMode(&inst->hal_radio_inst);
+            if (mode < HAL_RADIO_SUCCESS) {
+                // Some error occured
+                return mode;
+            } else if (mode == HAL_RADIO_RX_ACTIVE) {
+                int32_t res = HAL_RADIO_SUCCESS;
+                if ((res = halRadioCancelReceive(&inst->hal_radio_inst)) != HAL_RADIO_SUCCESS) {
+                    return res;
+                }
+            }
+        } break;
         case PHY_RADIO_INT_SCAN_TIMER: {
             // Manage timer tasks
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
