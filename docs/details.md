@@ -22,3 +22,8 @@ The time synchronization between two or more devices is based on detection of th
 The time synchronization might not always be perfect. To manage this there is a built-in guard time that makes the RX time period slightly longer than the maximum allowed TX time. This makes it possible for a TX packet to drift within a RX slot without loss of communication. Below is a very exaggerated visualization of this.
   
 ![Slot offset](frame_offset.png)
+
+## HAL and Timer details
+Below is a detailed sequence diagram that describes function calls during operation. The details might differ slightly between the implementation and the diagram, but the important flow of operations is visualized.
+  
+![Frame synchronization SEQ](frame_synch_seq.png)
