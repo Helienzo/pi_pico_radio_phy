@@ -1,0 +1,90 @@
+<mxfile host="65bd71144e">
+    <diagram id="nt0PCNbhViASVvTCcAxB" name="Page-1">
+        <mxGraphModel dx="1794" dy="980" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="22" value="TRX" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCCCCC;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="260" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="23" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;&amp;nbsp; Slot RX time&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="550" y="260" width="300" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="24" value="TRX" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCCCCC;" parent="1" vertex="1">
+                    <mxGeometry x="850" y="260" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="25" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;&amp;nbsp;&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;Slot RX time&lt;/span&gt;" style="rounded=0;whiteSpace=wrap;html=1;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="880" y="260" width="300" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="26" value="TRX" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#B3B3B3;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="260" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="27" value="&amp;nbsp; Slot RX time" style="rounded=0;whiteSpace=wrap;html=1;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="260" width="210" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="28" value="TRX" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#B3B3B3;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="200" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="29" value="-" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#B3B3B3;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="200" width="50" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="30" value="Slot TX time" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="200" width="110" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="32" value="-" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6E6E6;" parent="1" vertex="1">
+                    <mxGeometry x="510" y="200" width="50" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="33" value="TRX" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCCCCC;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="200" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="34" value="-" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCCCCC;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="200" width="50" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="35" value="Slot TX time" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="640" y="200" width="200" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="36" value="-" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6E6E6;" parent="1" vertex="1">
+                    <mxGeometry x="840" y="200" width="50" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="37" value="TRX" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCCCCC;" parent="1" vertex="1">
+                    <mxGeometry x="890" y="200" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="38" value="-" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#CCCCCC;" parent="1" vertex="1">
+                    <mxGeometry x="920" y="200" width="50" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="39" value="Slot TX time" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="200" width="200" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="40" value="-" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#B3B3B3;" parent="1" vertex="1">
+                    <mxGeometry x="1170" y="200" width="50" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="47" value="" style="endArrow=classic;startArrow=classic;html=1;" parent="1" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="280" y="214.58" as="sourcePoint"/>
+                        <mxPoint x="320" y="214.58" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="48" value="Time&lt;div&gt;&lt;span style=&quot;color: rgb(63, 63, 63); background-color: light-dark(#ffffff, var(--ge-dark-color, #121212));&quot;&gt;offset&lt;/span&gt;&lt;/div&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="47" vertex="1" connectable="0">
+                    <mxGeometry x="0.1833" y="1" relative="1" as="geometry">
+                        <mxPoint x="-4" y="-24" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="49" value="Sender" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="200" width="60" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="50" value="Receiver" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="260" width="60" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="51" value="Received" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6E6E6;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="260" width="110" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="52" value="Received" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6E6E6;" parent="1" vertex="1">
+                    <mxGeometry x="645" y="260" width="195" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="53" value="Received" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6E6E6;" parent="1" vertex="1">
+                    <mxGeometry x="970" y="260" width="195" height="30" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

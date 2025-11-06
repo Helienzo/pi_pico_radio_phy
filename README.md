@@ -1,6 +1,6 @@
 ## Phy control layer for the RFM69 radio for Pi Pico 2
 
-This is a PHY layer that provides a time-synchronized frame structure suitable for TDD and TDMA-based MAC protocols. It is built for the RFM69 family of radios specifically for the Pi Pico 2. It currently builds on top of the https://github.com/Helienzo/rfm69_radio_hal. The time frame can be configured with multiple slots of different lengths. During runtime each slot can be allocated as receive or transmit.
+This is a PHY layer that provides a time-synchronized frame structure suitable for TDD and TDMA-based MAC protocols. It is built for the RFM69 family of radios specifically for the Pi Pico 2. It currently builds on top of the https://github.com/Helienzo/rfm69_radio_hal. The time frame can be configured with multiple slots of different lengths. During runtime each slot can be allocated as receive or transmit. For more details, see the [detailed documentation](docs/details.md).
   
 To test this module check out the examples.  
 Note that the examples pulls in a couple of submodules using CMAKE FetchContent. Check the examples/example/CMakeLists.txt, for source repos.  
