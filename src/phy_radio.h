@@ -115,7 +115,7 @@ typedef enum {
     PHY_RADIO_MODE_FRAME_ERROR = -20093,
     PHY_RADIO_MODE_TIMER_ERROR = -20092,
     PHY_RADIO_MODE_HAL_ERROR   = -20091,
-    PHY_RADIO_MODE_IDLE,
+    PHY_RADIO_MODE_IDLE        = 0,
     PHY_RADIO_MODE_SCAN,
     PHY_RADIO_MODE_CENTRAL,
     PHY_RADIO_MODE_PERIPHERAL,
@@ -366,14 +366,21 @@ int32_t phyRadioTransitionPeripheralToCentral(phyRadio_t *inst);
 int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame);
 
 /**
- * Send a message on the next avialable slot.
- * This schedules the targeted slot as a TX slot either in the current frame if the slot is not yet started 
- * or the next frame if it has passed.
+ * Send a message on the next available slot in the next frame
  * Input: phyRadio instance
  * Input: phyRadio packet
  * Returns: phyRadioErr_t
  */
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
+
+/**
+ * Send a message on the next avialable slot within the current frame
+ * This can fail if the slot has allready started! Use with care.
+ * Input: phyRadio instance
+ * Input: phyRadio packet
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioSendOnSlotThisFrame(phyRadio_t *inst, phyRadioPacket_t* packet);
 
 /**
  * Receive data on a specific slot. Will automatically switch to TX if send on the same slot
@@ -432,6 +439,14 @@ int32_t phyRadioSetCustomData(phyRadio_t *inst, uint8_t *data, uint32_t data_siz
  * Returns: phyRadioErr_t
  */
 int32_t phyRadioClearCustomData(phyRadio_t *inst);
+
+/**
+ * Get the latest custom data from phy
+ * Input: phyRadio instance
+ * Input: Data to populate
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioGetCustomData(phyRadio_t *inst, uint8_t **data);
 
 #ifdef __cplusplus
 }

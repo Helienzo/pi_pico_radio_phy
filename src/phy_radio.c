@@ -77,7 +77,7 @@ static int32_t processPeripheral(phyRadio_t *inst);
 static int32_t processScan(phyRadio_t *inst);
 static int32_t processCentral(phyRadio_t *inst);
 static int32_t phyRadioManageFrameStart(phyRadio_t *inst);
-static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet);
+static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet, bool this_frame);
 static int32_t manageStartSyncEvent(phyRadio_t *inst, uint16_t slot_index);
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot);
 static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phyRadioPacket_t **data);
@@ -1518,7 +1518,7 @@ static inline int32_t sendAloha(phyRadio_t *inst, phyRadioPacket_t* packet) {
     return PHY_RADIO_SUCCESS;
 }
 
-static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet) {
+static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet, bool this_frame) {
     // Check that the slot is valid, protects agains oob
     if (packet->slot >= PHY_RADIO_NUM_SLOTS) {
         return PHY_RADIO_INVALID_SLOT;
@@ -1541,10 +1541,26 @@ static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet) {
         packet->addr = PHY_RADIO_BROADCAST_ADDR;
     }
 
-    // Store the packet in the common TX queue
-    res = queuePutInTxQueue(&inst->tdma_scheduler, packet);
-    if (res != STATIC_QUEUE_SUCCESS) {
-        return PHY_RADIO_QUEUE_ERROR;
+    if (this_frame) {
+        // Only allow this if the slot has not yet started
+        if (inst->tdma_scheduler.current_slot >= packet->slot) {
+            return PHY_RADIO_INVALID_SLOT;
+        }
+
+        // Set the slot as TX
+        inst->tdma_scheduler.slot[packet->slot].current_type = PHY_RADIO_SLOT_TX;
+
+        // Store the packet in the outgoing slot
+        res = queuePutInSlot(&inst->tdma_scheduler, packet->slot, packet);
+        if (res != STATIC_QUEUE_SUCCESS) {
+            return PHY_RADIO_QUEUE_ERROR;
+        }
+    } else {
+        // Store the packet in the common TX queue
+        res = queuePutInTxQueue(&inst->tdma_scheduler, packet);
+        if (res != STATIC_QUEUE_SUCCESS) {
+            return PHY_RADIO_QUEUE_ERROR;
+        }
     }
 
     return PHY_RADIO_SUCCESS;
@@ -1981,6 +1997,25 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst) {
     return PHY_RADIO_SUCCESS;
 }
 
+int32_t phyRadioSendOnSlotThisFrame(phyRadio_t *inst, phyRadioPacket_t* packet) {
+    if (inst == NULL || packet == NULL || packet->pkt_buffer == NULL) {
+        return PHY_RADIO_NULL_ERROR;
+    }
+
+    // Manage send given current mode
+    switch (inst->sync_state.mode) {
+        case PHY_RADIO_MODE_ALOHA:
+            return sendAloha(inst, packet);
+        case PHY_RADIO_MODE_PERIPHERAL:
+        case PHY_RADIO_MODE_CENTRAL:
+            return sendCentral(inst, packet, true);
+        case PHY_RADIO_MODE_SCAN:
+            return PHY_RADIO_INVALID_MODE;
+    }
+
+    return PHY_RADIO_SUCCESS;
+}
+
 int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
     if (inst == NULL || packet == NULL || packet->pkt_buffer == NULL) {
         return PHY_RADIO_NULL_ERROR;
@@ -1992,12 +2027,13 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
             return sendAloha(inst, packet);
         case PHY_RADIO_MODE_PERIPHERAL:
         case PHY_RADIO_MODE_CENTRAL:
-            return sendCentral(inst, packet);
+            return sendCentral(inst, packet, false);
         case PHY_RADIO_MODE_SCAN:
             return PHY_RADIO_INVALID_MODE;
     }
 
     return PHY_RADIO_SUCCESS;
+
 }
 
 int32_t phyRadioSetSlotIdle(phyRadio_t *inst, uint8_t slot) {
@@ -2124,4 +2160,8 @@ int32_t phyRadioSetCustomData(phyRadio_t *inst, uint8_t *data, uint32_t data_siz
 
 int32_t phyRadioClearCustomData(phyRadio_t *inst) {
     return phyRadioFrameSyncClearCustomData(&inst->tdma_scheduler.frame_sync);
+}
+
+int32_t phyRadioGetCustomData(phyRadio_t *inst, uint8_t **data) {
+    return phyRadioFrameGetLatestCustomData(&inst->tdma_scheduler.frame_sync, data);
 }
