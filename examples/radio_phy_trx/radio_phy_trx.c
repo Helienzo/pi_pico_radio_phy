@@ -91,7 +91,7 @@ void buttonEventCb(picoBootSelButtonInterface_t *interface, picoBootSelButtonEve
     }
 
     // Queue a packet for transmission
-    res = phyRadioSendOnSlot(&inst->phy_radio_inst, &inst->phy_pkt);
+    res = phyRadioSendOnSlot(&inst->phy_radio_inst, &inst->phy_pkt, true); // The this_frame param has no effect in alhoa mode
 
     if (res != PHY_RADIO_SUCCESS) {
         LOG("RADIO SEND FAILED! %i\n", res);

@@ -64,7 +64,7 @@ __attribute__((weak)) void radio_log(const char *format, ...) {
 
 typedef enum {
     PHY_RADIO_INT_IDLE = 0,
-    PHY_RADIO_INT_FRAME_GUARD_TIMER, // Currently unused
+    PHY_RADIO_INT_FRAME_GUARD_TIMER,
     PHY_RADIO_INT_FRAME_START_TIMER,
     PHY_RADIO_INT_SLOT_GUARD_START_TIMER, // Currently unused
     PHY_RADIO_INT_SLOT_START_TIMER,
@@ -76,8 +76,9 @@ typedef enum {
 static int32_t processPeripheral(phyRadio_t *inst);
 static int32_t processScan(phyRadio_t *inst);
 static int32_t processCentral(phyRadio_t *inst);
+static int32_t phyRadioManageFrameGuardStart(phyRadio_t *inst);
 static int32_t phyRadioManageFrameStart(phyRadio_t *inst);
-static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet);
+static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet, bool this_frame);
 static int32_t manageStartSyncEvent(phyRadio_t *inst, uint16_t slot_index);
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot);
 static int32_t queuePopFromSlot(phyRadioTdma_t*     scheduler, uint8_t slot, phyRadioPacket_t **data);
@@ -199,6 +200,9 @@ static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst, uint16_t slot_inde
             // Do nothing
             break;
     }
+
+    // Set the interrupt flag for next processing
+    inst->timer_interrupt = PHY_RADIO_INT_FRAME_GUARD_TIMER;
 
     // The frame start does not require any main context processing
     return PHY_RADIO_SUCCESS;
@@ -1405,9 +1409,7 @@ static int32_t manageStartSyncEvent(phyRadio_t *inst, uint16_t slot_index) {
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t phyRadioManageFrameStart(phyRadio_t *inst) {
-    int32_t res = PHY_RADIO_SUCCESS;
-
+static int32_t phyRadioManageFrameGuardStart(phyRadio_t *inst) {
     // Loop over all slots and manage their current type configuraion
     for (int i = 0; i < PHY_RADIO_NUM_SLOTS; i++) {
         // If it was a temporary type set it back to main type
@@ -1416,6 +1418,11 @@ static int32_t phyRadioManageFrameStart(phyRadio_t *inst) {
         }
     }
 
+    return PHY_RADIO_SUCCESS;
+}
+
+static int32_t phyRadioManageFrameStart(phyRadio_t *inst) {
+    int32_t res = PHY_RADIO_SUCCESS;
     phyRadioPacket_t* phy_packet = NULL;
 
     // Get the frame configuration
@@ -1518,7 +1525,7 @@ static inline int32_t sendAloha(phyRadio_t *inst, phyRadioPacket_t* packet) {
     return PHY_RADIO_SUCCESS;
 }
 
-static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet) {
+static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet, bool this_frame) {
     // Check that the slot is valid, protects agains oob
     if (packet->slot >= PHY_RADIO_NUM_SLOTS) {
         return PHY_RADIO_INVALID_SLOT;
@@ -1541,10 +1548,26 @@ static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet) {
         packet->addr = PHY_RADIO_BROADCAST_ADDR;
     }
 
-    // Store the packet in the common TX queue
-    res = queuePutInTxQueue(&inst->tdma_scheduler, packet);
-    if (res != STATIC_QUEUE_SUCCESS) {
-        return PHY_RADIO_QUEUE_ERROR;
+    if (this_frame) {
+        // Only allow this if the slot has not yet started
+        if (inst->tdma_scheduler.current_slot >= packet->slot) {
+            return PHY_RADIO_INVALID_SLOT;
+        }
+
+        // Set the slot as TX
+        inst->tdma_scheduler.slot[packet->slot].current_type = PHY_RADIO_SLOT_TX;
+
+        // Store the packet in the outgoing slot
+        res = queuePutInSlot(&inst->tdma_scheduler, packet->slot, packet);
+        if (res != STATIC_QUEUE_SUCCESS) {
+            return PHY_RADIO_QUEUE_ERROR;
+        }
+    } else {
+        // Store the packet in the common TX queue
+        res = queuePutInTxQueue(&inst->tdma_scheduler, packet);
+        if (res != STATIC_QUEUE_SUCCESS) {
+            return PHY_RADIO_QUEUE_ERROR;
+        }
     }
 
     return PHY_RADIO_SUCCESS;
@@ -1622,6 +1645,13 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
     switch(inst->timer_interrupt) {
         case PHY_RADIO_INT_IDLE:
             break;
+        case PHY_RADIO_INT_FRAME_GUARD_TIMER: {
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            int32_t res = PHY_RADIO_SUCCESS;
+            if ((res = phyRadioManageFrameGuardStart(inst)) != PHY_RADIO_SUCCESS) {
+                return res;
+            }
+        } break;
         case PHY_RADIO_INT_FRAME_START_TIMER: {
             // Main context processing of a frame start
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
@@ -1981,7 +2011,7 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst) {
     return PHY_RADIO_SUCCESS;
 }
 
-int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
+int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet, bool this_frame) {
     if (inst == NULL || packet == NULL || packet->pkt_buffer == NULL) {
         return PHY_RADIO_NULL_ERROR;
     }
@@ -1992,7 +2022,7 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
             return sendAloha(inst, packet);
         case PHY_RADIO_MODE_PERIPHERAL:
         case PHY_RADIO_MODE_CENTRAL:
-            return sendCentral(inst, packet);
+            return sendCentral(inst, packet, this_frame);
         case PHY_RADIO_MODE_SCAN:
             return PHY_RADIO_INVALID_MODE;
     }
@@ -2124,4 +2154,8 @@ int32_t phyRadioSetCustomData(phyRadio_t *inst, uint8_t *data, uint32_t data_siz
 
 int32_t phyRadioClearCustomData(phyRadio_t *inst) {
     return phyRadioFrameSyncClearCustomData(&inst->tdma_scheduler.frame_sync);
+}
+
+int32_t phyRadioGetCustomData(phyRadio_t *inst, uint8_t **data) {
+    return phyRadioFrameGetLatestCustomData(&inst->tdma_scheduler.frame_sync, data);
 }
