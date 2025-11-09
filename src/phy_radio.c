@@ -64,7 +64,7 @@ __attribute__((weak)) void radio_log(const char *format, ...) {
 
 typedef enum {
     PHY_RADIO_INT_IDLE = 0,
-    PHY_RADIO_INT_FRAME_GUARD_TIMER, // Currently unused
+    PHY_RADIO_INT_FRAME_GUARD_TIMER,
     PHY_RADIO_INT_FRAME_START_TIMER,
     PHY_RADIO_INT_SLOT_GUARD_START_TIMER, // Currently unused
     PHY_RADIO_INT_SLOT_START_TIMER,
@@ -76,6 +76,7 @@ typedef enum {
 static int32_t processPeripheral(phyRadio_t *inst);
 static int32_t processScan(phyRadio_t *inst);
 static int32_t processCentral(phyRadio_t *inst);
+static int32_t phyRadioManageFrameGuardStart(phyRadio_t *inst);
 static int32_t phyRadioManageFrameStart(phyRadio_t *inst);
 static inline int32_t sendCentral(phyRadio_t *inst, phyRadioPacket_t* packet, bool this_frame);
 static int32_t manageStartSyncEvent(phyRadio_t *inst, uint16_t slot_index);
@@ -199,6 +200,9 @@ static int32_t manageNewFrameTimerInterrupt(phyRadio_t *inst, uint16_t slot_inde
             // Do nothing
             break;
     }
+
+    // Set the interrupt flag for next processing
+    inst->timer_interrupt = PHY_RADIO_INT_FRAME_GUARD_TIMER;
 
     // The frame start does not require any main context processing
     return PHY_RADIO_SUCCESS;
@@ -1405,9 +1409,7 @@ static int32_t manageStartSyncEvent(phyRadio_t *inst, uint16_t slot_index) {
     return PHY_RADIO_SUCCESS;
 }
 
-static int32_t phyRadioManageFrameStart(phyRadio_t *inst) {
-    int32_t res = PHY_RADIO_SUCCESS;
-
+static int32_t phyRadioManageFrameGuardStart(phyRadio_t *inst) {
     // Loop over all slots and manage their current type configuraion
     for (int i = 0; i < PHY_RADIO_NUM_SLOTS; i++) {
         // If it was a temporary type set it back to main type
@@ -1416,6 +1418,11 @@ static int32_t phyRadioManageFrameStart(phyRadio_t *inst) {
         }
     }
 
+    return PHY_RADIO_SUCCESS;
+}
+
+static int32_t phyRadioManageFrameStart(phyRadio_t *inst) {
+    int32_t res = PHY_RADIO_SUCCESS;
     phyRadioPacket_t* phy_packet = NULL;
 
     // Get the frame configuration
@@ -1638,6 +1645,13 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
     switch(inst->timer_interrupt) {
         case PHY_RADIO_INT_IDLE:
             break;
+        case PHY_RADIO_INT_FRAME_GUARD_TIMER: {
+            inst->timer_interrupt = PHY_RADIO_INT_IDLE;
+            int32_t res = PHY_RADIO_SUCCESS;
+            if ((res = phyRadioManageFrameGuardStart(inst)) != PHY_RADIO_SUCCESS) {
+                return res;
+            }
+        } break;
         case PHY_RADIO_INT_FRAME_START_TIMER: {
             // Main context processing of a frame start
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
