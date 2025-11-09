@@ -1997,7 +1997,7 @@ int32_t phyRadioSetAlohaMode(phyRadio_t *inst) {
     return PHY_RADIO_SUCCESS;
 }
 
-int32_t phyRadioSendOnSlotThisFrame(phyRadio_t *inst, phyRadioPacket_t* packet) {
+int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet, bool this_frame) {
     if (inst == NULL || packet == NULL || packet->pkt_buffer == NULL) {
         return PHY_RADIO_NULL_ERROR;
     }
@@ -2008,32 +2008,12 @@ int32_t phyRadioSendOnSlotThisFrame(phyRadio_t *inst, phyRadioPacket_t* packet) 
             return sendAloha(inst, packet);
         case PHY_RADIO_MODE_PERIPHERAL:
         case PHY_RADIO_MODE_CENTRAL:
-            return sendCentral(inst, packet, true);
+            return sendCentral(inst, packet, this_frame);
         case PHY_RADIO_MODE_SCAN:
             return PHY_RADIO_INVALID_MODE;
     }
 
     return PHY_RADIO_SUCCESS;
-}
-
-int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet) {
-    if (inst == NULL || packet == NULL || packet->pkt_buffer == NULL) {
-        return PHY_RADIO_NULL_ERROR;
-    }
-
-    // Manage send given current mode
-    switch (inst->sync_state.mode) {
-        case PHY_RADIO_MODE_ALOHA:
-            return sendAloha(inst, packet);
-        case PHY_RADIO_MODE_PERIPHERAL:
-        case PHY_RADIO_MODE_CENTRAL:
-            return sendCentral(inst, packet, false);
-        case PHY_RADIO_MODE_SCAN:
-            return PHY_RADIO_INVALID_MODE;
-    }
-
-    return PHY_RADIO_SUCCESS;
-
 }
 
 int32_t phyRadioSetSlotIdle(phyRadio_t *inst, uint8_t slot) {

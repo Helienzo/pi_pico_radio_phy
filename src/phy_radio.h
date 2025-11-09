@@ -366,21 +366,13 @@ int32_t phyRadioTransitionPeripheralToCentral(phyRadio_t *inst);
 int32_t phyRadioSetFrameStructure(phyRadio_t *inst, phyRadioFrameConfig_t *frame);
 
 /**
- * Send a message on the next available slot in the next frame
+ * Send a message on the next available slot in the ongoing frame, or queue for next
  * Input: phyRadio instance
  * Input: phyRadio packet
+ * Input: true to send this frame. This can fail if the slot has allready started, or passed, use with care!
  * Returns: phyRadioErr_t
  */
-int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet);
-
-/**
- * Send a message on the next avialable slot within the current frame
- * This can fail if the slot has allready started! Use with care.
- * Input: phyRadio instance
- * Input: phyRadio packet
- * Returns: phyRadioErr_t
- */
-int32_t phyRadioSendOnSlotThisFrame(phyRadio_t *inst, phyRadioPacket_t* packet);
+int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet, bool this_frame);
 
 /**
  * Receive data on a specific slot. Will automatically switch to TX if send on the same slot
