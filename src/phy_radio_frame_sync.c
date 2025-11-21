@@ -561,7 +561,7 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     frame_length_us += frame->end_guard;
 
     // Configure the frame
-    frame->frame_length_us = phyRadioFrameConfig(&inst->timer_config, frame_length_us, inst->_frame_ticks, tick_index);
+    frame->frame_length_us = phyRadioFrameConfig(&inst->timer_config, frame, frame_length_us, inst->_frame_ticks, tick_index);
 
     // Prepare configuration
     inst->frame_duration             = frame->frame_length_us;

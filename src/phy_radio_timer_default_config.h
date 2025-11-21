@@ -17,7 +17,7 @@ struct phyRadioTimerConfig {
 };
 
 // Configure the frame
-static uint32_t phyRadioFrameConfig(phyRadioTimerConfig_t *config, uint32_t frame_lenght, uint16_t *ticks, uint32_t num_ticks) {
+static uint32_t phyRadioFrameConfig(phyRadioTimerConfig_t *config, phyRadioFrameConfig_t *frame, uint32_t frame_lenght, uint16_t *ticks, uint32_t num_ticks) {
     config->num_ticks     = num_ticks;
     config->tick_sequence = ticks;
 
