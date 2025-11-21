@@ -656,3 +656,11 @@ int32_t phyRadioFrameSyncGetFrameCount(phyRadioFrameSync_t *inst) {
 
     return inst->frame_counter;
 }
+
+int32_t phyRadioFrameSyncEventInQueue(phyRadioFrameSync_t *inst) {
+    if (inst->timer_interrupt > 0) {
+        return PHY_RADIO_FRAME_SYNC_INTERRUPT_QUEUE;
+    }
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}

@@ -66,6 +66,7 @@ extern "C" {
 #endif /* PHY_RADIO_PID_KD */
 
 typedef enum {
+    PHY_RADIO_FRAME_SYNC_INTERRUPT_QUEUE  = 1,
     PHY_RADIO_FRAME_SYNC_SUCCESS          = 0,
     PHY_RADIO_FRAME_SYNC_NULL_ERROR       = -22001,
     PHY_RADIO_FRAME_SYNC_GEN_ERROR        = -22002,
@@ -292,6 +293,13 @@ int32_t phyRadioFrameSyncResetFrameCounter(phyRadioFrameSync_t *inst);
  * Returns: Current frame counter value
  */
 int32_t phyRadioFrameSyncGetFrameCount(phyRadioFrameSync_t *inst);
+
+/**
+ * Check if the frame sync needs to be processed
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioFrameSyncEventInQueue(phyRadioFrameSync_t *inst);
 
 #ifdef __cplusplus
 }

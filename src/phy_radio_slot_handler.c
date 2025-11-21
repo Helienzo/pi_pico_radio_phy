@@ -485,3 +485,10 @@ int32_t phyRadioSlotHandlerEventManager(phyRadioSlotHandler_t *inst, phyRadioSlo
     return PHY_RADIO_SLOT_HANDLER_SUCCESS;
 }
 
+int32_t phyRadioSLotHandlerEventInQueue(phyRadioSlotHandler_t *inst) {
+    if (inst->timer_interrupt > 0) {
+        return PHY_RADIO_SLOT_HANDLER_INTERRUPT_QUEUE;
+    }
+
+    return PHY_RADIO_SLOT_HANDLER_SUCCESS;
+}

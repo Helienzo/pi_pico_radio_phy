@@ -1359,6 +1359,14 @@ int32_t phyRadioEventInQueue(phyRadio_t *inst) {
         return PHY_RADIO_INTERRUPT_IN_QUEUE;
     }
 
+    if (phyRadioFrameSyncEventInQueue(&inst->tdma_scheduler.frame_sync) > 0) {
+        return PHY_RADIO_INTERRUPT_IN_QUEUE;
+    }
+
+    if (phyRadioSLotHandlerEventInQueue(&inst->tdma_scheduler.slot_handler) > 0) {
+        return PHY_RADIO_INTERRUPT_IN_QUEUE;
+    }
+
     if (inst->timer_interrupt > 0) {
         return PHY_RADIO_INTERRUPT_IN_QUEUE;
     }

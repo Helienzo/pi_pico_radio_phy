@@ -163,7 +163,7 @@ static void frame_timer_callback(void) {
         pwm_set_irq_enabled(PHY_RADIO_FAST_TASK_TIMER_PWM_SLICE, false);
 
         // Get the fast task timer instance
-        phyRadioFastTaskTimer_t *fast_task_inst = fast_task_inst->_private->fast_task_timer_inst;
+        phyRadioFastTaskTimer_t *fast_task_inst = fast_task_timer.fast_task_timer_inst;
         if (fast_task_inst != NULL) {
             fast_task_inst->active = false;
 

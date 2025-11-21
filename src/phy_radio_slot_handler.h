@@ -34,9 +34,10 @@ extern "C" {
  * Error codes for slot handler module
  */
 typedef enum {
-    PHY_RADIO_SLOT_HANDLER_SUCCESS      = 0,
-    PHY_RADIO_SLOT_HANDLER_NULL_ERROR   = -23001,
-    PHY_RADIO_SLOT_HANDLER_GEN_ERROR    = -23002,
+    PHY_RADIO_SLOT_HANDLER_INTERRUPT_QUEUE = 1,
+    PHY_RADIO_SLOT_HANDLER_SUCCESS         = 0,
+    PHY_RADIO_SLOT_HANDLER_NULL_ERROR      = -23001,
+    PHY_RADIO_SLOT_HANDLER_GEN_ERROR       = -23002,
 } phyRadioSlotHandlerErr_t;
 
 typedef enum {
@@ -117,6 +118,8 @@ int32_t phyRadioSlotHandlerRestoreSlots(phyRadioSlotHandler_t *inst);
 int32_t phyRadioSlotHandlerResetSlots(phyRadioSlotHandler_t *inst);
 
 int32_t phyRadioSlotHandlerEventManager(phyRadioSlotHandler_t *inst, phyRadioSlotHandlerEvent_t event, uint16_t slot_index);
+
+int32_t phyRadioSLotHandlerEventInQueue(phyRadioSlotHandler_t *inst);
 
 #ifdef __cplusplus
 }
