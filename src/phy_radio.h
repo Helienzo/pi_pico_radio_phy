@@ -32,16 +32,13 @@ extern "C" {
 #include "phy_radio_timer.h"
 #include "phy_radio_common.h"
 #include "phy_radio_frame_sync.h"
+#include "phy_radio_slot_handler.h"
 
 #ifndef CONTAINER_OF
 #define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
 #endif
 
 // TDMA parameters
-#ifndef PHY_RADIO_NUM_SLOTS
-#define PHY_RADIO_NUM_SLOTS (PHY_RADIO_NUM_SLOTS_IN_FRAME)
-#endif /* PHY_RADIO_NUM_SLOTS */
-
 #ifndef PHY_RADIO_NUM_ITEMS
 #define PHY_RADIO_NUM_ITEMS (6)
 #endif /* PHY_RADIO_NUM_ITEMS */
@@ -53,14 +50,6 @@ extern "C" {
 #ifndef PHY_RADIO_SYNC_TIMEOUT
 #define PHY_RADIO_SYNC_TIMEOUT (3)
 #endif /* PHY_RADIO_SYNC_TIMEOUT */
-
-#ifndef PHY_RADIO_PERIPHERAL_RX_SLOT
-#define PHY_RADIO_PERIPHERAL_RX_SLOT (0)
-#endif /* PHY_RADIO_PERIPHERAL_RX_SLOT */
-
-#ifndef PHY_RADIO_CENTRAL_TX_SLOT
-#define PHY_RADIO_CENTRAL_TX_SLOT (0)
-#endif /* PHY_RADIO_CENTRAL_TX_SLOT */
 
 // Guard time between two TX packets in the same slot
 #ifndef PHY_RADIO_PACKET_GUARD_TIME_US
@@ -110,23 +99,6 @@ typedef enum {
     PHY_RADIO_TDMA_ERROR    = -20013,
     PHY_RADIO_QUEUE_ERROR   = -20014,
 } phyRadioErr_t;
-
-typedef enum {
-    PHY_RADIO_MODE_FRAME_ERROR = -20093,
-    PHY_RADIO_MODE_TIMER_ERROR = -20092,
-    PHY_RADIO_MODE_HAL_ERROR   = -20091,
-    PHY_RADIO_MODE_IDLE        = 0,
-    PHY_RADIO_MODE_SCAN,
-    PHY_RADIO_MODE_CENTRAL,
-    PHY_RADIO_MODE_PERIPHERAL,
-    PHY_RADIO_MODE_ALOHA,
-} phyRadioMode_t;
-
-typedef enum {
-    PHY_RADIO_SLOT_IDLE,
-    PHY_RADIO_SLOT_RX,
-    PHY_RADIO_SLOT_TX,
-} phyRadioSlotType_t;
 
 typedef enum {
     PHY_RADIO_CB_SET_SCAN       = 2,
@@ -224,28 +196,21 @@ typedef struct {
         // Slot items and queue
         phyRadioSlotItem_t items[PHY_RADIO_NUM_ITEMS_SLOTS]; // Circular buffer of slot items
         staticQueue_t      static_queue;
-
-        // Slot type
-        phyRadioSlotType_t current_type;
-        phyRadioSlotType_t main_type;
     } slot[PHY_RADIO_NUM_SLOTS];
 
     uint8_t            current_slot;
-    phyRadioPacket_t   *active_item;
+    phyRadioPacket_t  *active_item;
     bool               in_flight;
     uint32_t           scan_timeout_ms;
     uint16_t           packet_delay_time_us; // The time it will take for the receiver to read and decode this packet
-
-    // Superframe management
-    uint16_t frame_counter; // Keeping track of number of slots in a superframe
-    uint16_t sync_interval; // Keeping track of number of slots in a superframe
-    uint16_t sync_counter;  // Keeping track of frames since last sync
+    uint16_t           sync_counter;  // Keeping track of frames since last sync
 
     // ForEach context for slot operations
     uint8_t fe_slot_target;
 
     // Module responsible for syncronizing internal timers
-    phyRadioFrameSync_t frame_sync;
+    phyRadioFrameSync_t   frame_sync;
+    phyRadioSlotHandler_t slot_handler;
 } phyRadioTdma_t;
 
 
@@ -262,6 +227,7 @@ typedef struct {
     halRadioInterface_t *hal_interface;
     uint8_t              my_address;
     uint8_t              hal_bitrate;
+    cBuffer_t           *rx_buffer;
 } phyRadioTdmaInit_t;
 
 
