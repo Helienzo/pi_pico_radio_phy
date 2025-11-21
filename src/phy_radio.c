@@ -334,7 +334,7 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
             // Error managed, nothing more to do return
             return HAL_RADIO_CB_SUCCESS;
         default:
-            // Just forwade the error
+            // Just forward the error
             send_result = (phyRadioErr_t)result;
             break;
     }
@@ -777,7 +777,7 @@ static int32_t queuePeakOnSlot(phyRadioTdma_t*     scheduler,
                                uint8_t             slot,
                                phyRadioPacket_t**  pkt)
 {
-    // Get the next item from the queue witout removing it
+    // Get the next item from the queue without removing it
     staticQueueItem_t* item;
     int32_t            result = staticQueuePeak(&scheduler->slot[slot].static_queue, &item);
 
@@ -974,7 +974,7 @@ static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, 
     inst->hal_interface.pkt_buffer = active_packet->pkt_buffer;
 
     int32_t num_bytes_to_send = 0;
-    if ((num_bytes_to_send = cBufferAvailableForRead(active_packet->pkt_buffer)) <= C_BUFFER_SUCCESS || num_bytes_to_send > 255) {
+    if ((num_bytes_to_send = cBufferAvailableForRead(active_packet->pkt_buffer)) <= 0 || num_bytes_to_send > 255) {
         return PHY_RADIO_BUFFER_ERROR;
     }
 
@@ -1363,7 +1363,7 @@ int32_t phyRadioEventInQueue(phyRadio_t *inst) {
         return PHY_RADIO_INTERRUPT_IN_QUEUE;
     }
 
-    if (phyRadioSLotHandlerEventInQueue(&inst->tdma_scheduler.slot_handler) > 0) {
+    if (phyRadioSlotHandlerEventInQueue(&inst->tdma_scheduler.slot_handler) > 0) {
         return PHY_RADIO_INTERRUPT_IN_QUEUE;
     }
 
@@ -1561,7 +1561,7 @@ int32_t phyRadioInit(phyRadio_t *inst, phyRadioInterface_t *interface, uint8_t a
     // Lets make sure that the longest packets supported fit in our slot configuration
     int32_t packet_time_us = packetTimeEstimate(inst, PHY_RADIO_MAX_PACKET_SIZE);
     if (packet_time_us < PHY_RADIO_SUCCESS) {
-        // An unkonwn error occured
+        // An unknown error occurred
         return packet_time_us;
     }
 
@@ -1831,7 +1831,7 @@ int32_t phyRadioSetSlotIdle(phyRadio_t *inst, uint8_t slot) {
     }
 
     // Check if the slot is a valid value
-    if (slot > PHY_RADIO_NUM_SLOTS) {
+    if (slot >= PHY_RADIO_NUM_SLOTS) {
         return PHY_RADIO_INVALID_SLOT;
     }
 
@@ -1851,7 +1851,7 @@ int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot) {
     }
 
     // Check if the slot is a valid value
-    if (slot > PHY_RADIO_NUM_SLOTS) {
+    if (slot >= PHY_RADIO_NUM_SLOTS) {
         return PHY_RADIO_INVALID_SLOT;
     }
 

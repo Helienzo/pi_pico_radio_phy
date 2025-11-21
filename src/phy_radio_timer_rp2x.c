@@ -412,7 +412,6 @@ int32_t phyRadioTimerCancelFastTaskTimer(phyRadioFastTaskTimer_t *inst) {
 
     inst->active   = false;
     inst->task_cb  = NULL;
-    inst->_private = NULL;
 
     return PHY_RADIO_TIMER_SUCCESS;
 }

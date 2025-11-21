@@ -67,7 +67,7 @@ struct phyRadioSlotHandler {
     halRadio_t          *hal_radio_inst;
     halRadioInterface_t *hal_interface;
     cBuffer_t           *rx_buffer;
-    uint32_t             timer_interrupt;
+    volatile uint32_t    timer_interrupt;
 
     struct {
         // Slot type

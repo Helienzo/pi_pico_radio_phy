@@ -434,11 +434,19 @@ int32_t phyRadioSlotHandlerResetSlots(phyRadioSlotHandler_t *inst) {
 }
 
 int32_t phyRadioSlotHandlerSetSlotCur(phyRadioSlotHandler_t *inst, uint8_t slot, phyRadioSlotType_t mode) {
+    if (slot >= PHY_RADIO_NUM_SLOTS) {
+        return PHY_RADIO_SLOT_HANDLER_GEN_ERROR;
+    }
+
     inst->slot[slot].current_type = mode;
     return PHY_RADIO_SLOT_HANDLER_SUCCESS;
 }
 
 int32_t phyRadioSlotHandlerSetSlotMain(phyRadioSlotHandler_t *inst, uint8_t slot, phyRadioSlotType_t mode) {
+    if (slot >= PHY_RADIO_NUM_SLOTS) {
+        return PHY_RADIO_SLOT_HANDLER_GEN_ERROR;
+    }
+
     inst->slot[slot].main_type = mode;
 
     return PHY_RADIO_SLOT_HANDLER_SUCCESS;
@@ -485,7 +493,7 @@ int32_t phyRadioSlotHandlerEventManager(phyRadioSlotHandler_t *inst, phyRadioSlo
     return PHY_RADIO_SLOT_HANDLER_SUCCESS;
 }
 
-int32_t phyRadioSLotHandlerEventInQueue(phyRadioSlotHandler_t *inst) {
+int32_t phyRadioSlotHandlerEventInQueue(phyRadioSlotHandler_t *inst) {
     if (inst->timer_interrupt > 0) {
         return PHY_RADIO_SLOT_HANDLER_INTERRUPT_QUEUE;
     }

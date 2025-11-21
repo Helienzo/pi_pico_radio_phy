@@ -271,7 +271,7 @@ static int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadi
 int32_t phyRadioFrameSyncNotifySyncSent(phyRadioFrameSync_t *inst, halRadioPackage_t* hal_packet) {
     inst->pkt_sent_time = hal_packet->time - inst->pkt_sent_time;
     // If this calculation was correct the send time should never be more than 2ms
-    // This protects from errounous behaviour, could perhaps be removed
+    // This protects from erroneous behaviour, could perhaps be removed
     if (inst->pkt_sent_time < PHY_RADIO_SYNC_MSG_MAX_TIME) {
         inst->central_sync_msg_time = (uint16_t)inst->pkt_sent_time;
     }
