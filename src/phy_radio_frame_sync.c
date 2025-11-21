@@ -143,6 +143,7 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
             int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_SLOT_END_GUARD_EVENT, inst->slot_index);
             if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
                 inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+                return res;
             }
         } return true;
         case PHY_RADIO_TIMER_SLOT_GUARD_START: {
