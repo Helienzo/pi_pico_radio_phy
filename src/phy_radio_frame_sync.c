@@ -112,7 +112,7 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
     if (frame_index == 0) {
         // This marks the start of the first slot
         // Get the current time
-        inst->slot_start_time = time_us_64();
+        inst->slot_start_time = phyRadioTimerGetTime();
         inst->slot_index = 0;
 
         frame_event = SLOT_HANDLER_FIRST_SLOT_START_EVENT;
@@ -148,7 +148,7 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
             } return true;
             case 2: {
                 // This marks the start of the slot guard
-                inst->slot_start_time = time_us_64();
+                inst->slot_start_time = phyRadioTimerGetTime();
                 inst->slot_index++;
                 frame_event     = SLOT_HANDLER_SLOT_GUARD_EVENT;
                 interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
@@ -341,7 +341,7 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
             inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
             // Manage the packet send if we could not send it in ISR context
             if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
-                inst->pkt_sent_time = time_us_64();
+                inst->pkt_sent_time = phyRadioTimerGetTime();
             }
 
             int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_FIRST_SLOT_START_EVENT, inst->slot_index);
@@ -426,7 +426,7 @@ int32_t phyRadioFrameSyncTimeLeftInSlot(phyRadioFrameSync_t *inst, uint8_t slot)
     }
 
     // Compute how long we have been in this slot, and check that we have not overflowed
-    uint64_t time_in_slot = time_us_64() - inst->slot_start_time;
+    uint64_t time_in_slot = phyRadioTimerGetTime() - inst->slot_start_time;
     uint16_t slot_length_us = inst->frame_config->slots[slot].slot_length_us;
 
     if (time_in_slot > slot_length_us) {
@@ -504,7 +504,7 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     inst->sync_interval = 1; // Default is to send sync every frame
 
     // Calculate a best effort sync message time estimate to initialize this value
-    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, init_struct->hal_bitrate, PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE);
+    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE);
 
     inst->frame_config               = NULL;
     inst->timer_config.num_ticks     = 0;

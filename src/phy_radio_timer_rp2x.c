@@ -43,14 +43,14 @@
 
 struct phyRadioTaskTimerInternal {
     alarm_id_t task_alarm_id;
-}
+};
 
 struct phyRadioFastTaskTimerInternal {
     // Fast task timer fields (PWM-based)
     float                    fast_task_clk_div;
     float                    fast_task_clk_converter;
     phyRadioFastTaskTimer_t *fast_task_timer_inst;
-}
+};
 
 struct phyRadioTimerInternal {
     bool       frame_timer_active;
@@ -75,7 +75,7 @@ static phyRadioFastTaskTimerInternal_t fast_task_timer;
 static int64_t task_timer_alarm_callback(alarm_id_t id, void *user_data) {
     // Get the current phy radio instance
     phyRadioTaskTimer_t *inst = (phyRadioTaskTimer_t*)user_data;
-    inst->_private.task_alarm_id = 0;
+    inst->_private->task_alarm_id = 0;
 
     if (inst->task_cb != NULL) {
         inst->task_cb(inst);
@@ -144,7 +144,7 @@ static void frame_timer_callback(void) {
         pwm_set_irq_enabled(PHY_RADIO_FAST_TASK_TIMER_PWM_SLICE, false);
 
         // Get the fast task timer instance
-        phyRadioFastTaskTimer_t *fast_task_inst = fast_task_inst.fast_task_timer_inst;
+        phyRadioFastTaskTimer_t *fast_task_inst = fast_task_inst->_private->fast_task_timer_inst;
         if (fast_task_inst != NULL) {
             fast_task_inst->active = false;
 
@@ -155,6 +155,15 @@ static void frame_timer_callback(void) {
             }
         }
     }
+}
+
+uint64_t phyRadioTimerGetTime(void) {
+    return time_us_64();
+}
+
+int32_t phyRadioTimerSleep(uint32_t us) {
+    sleep_us(us);
+    return PHY_RADIO_TIMER_SUCCESS;
 }
 
 /**
@@ -190,10 +199,10 @@ int32_t phyRadioTaskTimerInit(phyRadioTaskTimer_t *inst) {
 }
 
 int32_t phyRadioTimerStartTaskTimer(phyRadioTaskTimer_t *inst, phyRadioTaskTimerCb_t cb, uint32_t time_us) {
-    if (inst->_private.task_alarm_id == 0 && inst->initialized) {
+    if (inst->_private->task_alarm_id == 0 && inst->initialized) {
         inst->task_cb = cb; // This must be set before adding the alarm as a timeout might occur during the add
-        if ((inst->_private.task_alarm_id = add_alarm_in_us(time_us, task_timer_alarm_callback, inst, true)) < 0) {
-            inst->_private.task_alarm_id = 0;
+        if ((inst->_private->task_alarm_id = add_alarm_in_us(time_us, task_timer_alarm_callback, inst, true)) < 0) {
+            inst->_private->task_alarm_id = 0;
             inst->task_cb       = NULL;
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
@@ -205,13 +214,13 @@ int32_t phyRadioTimerStartTaskTimer(phyRadioTaskTimer_t *inst, phyRadioTaskTimer
 }
 
 int32_t phyRadioTimerCancelTaskTimer(phyRadioTaskTimer_t *inst) {
-    if (inst->_private.task_alarm_id != 0 && inst->initialized) {
-        if (!cancel_alarm(inst->_private.task_alarm_id)) {
+    if (inst->_private->task_alarm_id != 0 && inst->initialized) {
+        if (!cancel_alarm(inst->_private->task_alarm_id)) {
             return PHY_RADIO_TIMER_HAL_ERROR;
         }
     }
 
-    inst->_private.task_alarm_id = 0;
+    inst->_private->task_alarm_id = 0;
     inst->task_cb       = NULL;
 
     return PHY_RADIO_TIMER_SUCCESS;
@@ -226,24 +235,24 @@ int32_t phyRadioFastTaskTimerInit(phyRadioFastTaskTimer_t *inst) {
         return PHY_RADIO_TIMER_DOUBLE_INIT_ERROR;
     }
 
-    // Store the fast task timer instance in the global timer data
-    timer_data.fast_task_timer_inst = inst;
-
     // Compute clock divider for fast task timer (support up to 5ms timeouts)
     float sys_hz = (float)clock_get_hz(clk_sys);
     float max_task_time_us = 5000.0f; // 5ms maximum timeout
     fast_task_timer.fast_task_clk_div = ceilf(((max_task_time_us)/1000000.0f)/((65535.0f/sys_hz)));
 
     // Compute conversion factor from us to ticks
-    fast_task_timer.fast_task_clk_converter = 0.000001f/(1.0f/(sys_hz/timer_data.fast_task_clk_div));
+    fast_task_timer.fast_task_clk_converter = 0.000001f/(1.0f/(sys_hz/fast_task_timer.fast_task_clk_div));
 
     // Configure the PWM slice for fast task timer
     pwm_config config = pwm_get_default_config();
-    pwm_config_set_clkdiv(&config, timer_data.fast_task_clk_div);
+    pwm_config_set_clkdiv(&config, fast_task_timer.fast_task_clk_div);
     pwm_init(PHY_RADIO_FAST_TASK_TIMER_PWM_SLICE, &config, false);
 
     // Clear any pending IRQ
     pwm_clear_irq(PHY_RADIO_FAST_TASK_TIMER_PWM_SLICE);
+
+    // Store the fast task timer instance in the global timer data
+    fast_task_timer.fast_task_timer_inst = inst;
 
     inst->initialized = true;
     inst->active      = false;

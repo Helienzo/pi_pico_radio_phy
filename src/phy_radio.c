@@ -231,7 +231,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
 
     if (tdma_scheduler->packet_delay_time_us < PHY_RADIO_MAX_BLOCK_DELAY_TIME_US) {
         // If this time is short we can just sleep here.
-        sl_udelay_wait((uint32_t)tdma_scheduler->packet_delay_time_us);
+        phyRadioTimerSleep((uint32_t)tdma_scheduler->packet_delay_time_us);
     } else {
         // If the wait time is long we need to schedule this as a non blocking task
 
@@ -1454,7 +1454,7 @@ int32_t phyRadioProcess(phyRadio_t *inst) {
         case PHY_RADIO_INT_SCAN_TIMER: {
             // Manage timer tasks
             inst->timer_interrupt = PHY_RADIO_INT_IDLE;
-            LOG_V_DEBUG("Repeat at %lld\n", time_us_64());
+            LOG_V_DEBUG("Repeat at %lld\n", phyRadioTimerGetTime());
 
             switch(inst->sync_state.mode) {
                 case PHY_RADIO_MODE_SCAN:

@@ -84,6 +84,19 @@ struct phyRadioFastTaskTimer {
 };
 
 /**
+ * Get the current time
+ * Returns: absolute time
+ */
+uint64_t phyRadioTimerGetTime(void);
+
+/**
+ * Blocking sleep function
+ * Input: Time in us
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerSleep(uint32_t us);
+
+/**
  * Init the phy radio timer
  * Input: phyRadioTimer instance
  * Returns: phyRadioTimerErr_t
