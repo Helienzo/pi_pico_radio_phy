@@ -31,6 +31,12 @@ extern "C" {
 #include "c_buffer.h"
 #include "phy_radio_timer.h"
 #include "phy_radio_common.h"
+#include "phy_radio_slot_handler.h"
+#ifndef PHY_RADIO_FRAME_SYNC_CONFIG_TIMER
+#include "phy_radio_timer_default_config.h"
+#else
+#include "phy_radio_timer_config.h"
+#endif
 
 #ifndef CONTAINER_OF
 #define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))
@@ -60,6 +66,7 @@ extern "C" {
 #endif /* PHY_RADIO_PID_KD */
 
 typedef enum {
+    PHY_RADIO_FRAME_SYNC_INTERRUPT_QUEUE  = 1,
     PHY_RADIO_FRAME_SYNC_SUCCESS          = 0,
     PHY_RADIO_FRAME_SYNC_NULL_ERROR       = -22001,
     PHY_RADIO_FRAME_SYNC_GEN_ERROR        = -22002,
@@ -74,8 +81,8 @@ typedef enum {
 #define PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE           (PHY_RADIO_SENDER_ADDR_SIZE + PHY_RADIO_PKT_TYPE_SIZE + PHY_RADIO_FRAME_SYNC_TX_TIME_SIZE + PHY_RADIO_SYNC_GEN_DATA_SIZE)
 
 typedef enum {
-    PHY_RADIO_FRAME_SYNC_MODE_TIMER_ERROR = -20092,
-    PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR   = -20091,
+    PHY_RADIO_FRAME_SYNC_MODE_TIMER_ERROR = -22092,
+    PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR   = -22091,
     PHY_RADIO_FRAME_SYNC_MODE_IDLE        = 0,
     PHY_RADIO_FRAME_SYNC_MODE_CENTRAL     = 1,
     PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL  = 2,
@@ -101,19 +108,20 @@ typedef enum {
  * Initialization structure for frame sync module
  */
 typedef struct {
-    phyRadio_t          *phy_radio_inst;
-    halRadio_t          *hal_radio_inst;
-    halRadioInterface_t *hal_interface;
-    uint8_t              my_address;
-    uint8_t              hal_bitrate;
+    phyRadioSlotHandler_t *slot_handler;
+    halRadio_t            *hal_radio_inst;
+    halRadioInterface_t   *hal_interface;
+    uint8_t                my_address;
+    uint8_t                hal_bitrate;
+    phyRadioPacket_t     **active_item;
 } phyRadioFrameSyncInit_t;
 
 /**
  * Main data type for this module
  */
 typedef struct {
-    // Top level instance
-    phyRadio_t *phy_radio_inst;
+    // Slot handler instance for event callbacks
+    phyRadioSlotHandler_t *slot_handler;
 
     // HalRadio
     halRadio_t          *hal_radio_inst;
@@ -131,7 +139,10 @@ typedef struct {
     uint8_t             sync_packet_gen_data[PHY_RADIO_SYNC_GEN_DATA_SIZE]; // Contains custom data configurable by higher layers
     uint8_t             sync_packet_received_gen_data[PHY_RADIO_SYNC_GEN_DATA_SIZE]; // Received custom data
 #endif
-    
+ 
+    // Packet management
+    phyRadioPacket_t **active_item;
+   
     // Frame management
     phyRadioFrameConfig_t *frame_config; // Pointer to the current frame config
     uint16_t               _frame_ticks[PHY_RADIO_NUM_TICKS_IN_FRAME]; // Frame ticks, used by the timer
@@ -159,6 +170,9 @@ typedef struct {
     float   error_prev;
     float   integral;
 
+    // Superframe management
+    uint16_t frame_counter; // Keeping track of number of frames in a superframe
+    uint16_t sync_interval; // How often to send sync (in frames)
 } phyRadioFrameSync_t;
 
 /**
@@ -185,22 +199,6 @@ int32_t phyRadioFrameSyncDeInit(phyRadioFrameSync_t *inst);
  * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncNewSync(phyRadioFrameSync_t *inst, uint16_t phy_header_msb, phyRadioPacket_t *phy_packet, halRadioPackage_t* hal_packet);
-
-/**
- * Queue the next sync packet
- * Input: phyRadioFrameSync instance
- * Input: Pointer that is populated with the sync packet
- * Returns: phyRadioFrameSyncErr_t
- */
-
-int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket_t **sync_packet);
-
-/**
- * Send the next sync packet
- * Input: phyRadioFrameSync instance
- * Returns: phyRadioFrameSyncErr_t
- */
-int32_t phyRadioFrameSyncSendNextSync(phyRadioFrameSync_t *inst);
 
 /**
  * Set custom data in sync message
@@ -273,6 +271,35 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
  * Returns: phyRadioFrameSyncErr_t
  */
 int32_t phyRadioFrameSyncGetStructure(phyRadioFrameSync_t *inst, phyRadioFrameConfig_t **frame);
+
+/**
+ * Set the sync interval
+ * Input: Frame sync instance
+ * Input: Sync interval (number of frames between syncs)
+ * Returns: phyRadioFrameSyncErr_t
+ */
+int32_t phyRadioFrameSyncSetInterval(phyRadioFrameSync_t *inst, uint16_t sync_interval);
+
+/**
+ * Reset the frame counter
+ * Input: Frame sync instance
+ * Returns: phyRadioFrameSyncErr_t
+ */
+int32_t phyRadioFrameSyncResetFrameCounter(phyRadioFrameSync_t *inst);
+
+/**
+ * Get the current frame count
+ * Input: Frame sync instance
+ * Returns: Current frame counter value
+ */
+int32_t phyRadioFrameSyncGetFrameCount(phyRadioFrameSync_t *inst);
+
+/**
+ * Check if the frame sync needs to be processed
+ * Input: phyRadio instance
+ * Returns: phyRadioErr_t
+ */
+int32_t phyRadioFrameSyncEventInQueue(phyRadioFrameSync_t *inst);
 
 #ifdef __cplusplus
 }

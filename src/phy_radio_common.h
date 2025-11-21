@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 #include "c_buffer.h"
-#include "pico/stdlib.h"
+#include "stdint.h"
 
 #ifndef PHY_RADIO_SYNC_GEN_DATA_SIZE
 #define PHY_RADIO_SYNC_GEN_DATA_SIZE (1)
@@ -69,6 +69,10 @@ extern "C" {
 #define PHY_RADIO_NUM_SLOTS_IN_FRAME (4)
 #endif /* PHY_RADIO_NUM_SLOTS_IN_FRAME */
 
+#ifndef PHY_RADIO_NUM_SLOTS
+#define PHY_RADIO_NUM_SLOTS (PHY_RADIO_NUM_SLOTS_IN_FRAME)
+#endif /* PHY_RADIO_NUM_SLOTS */
+
 #ifndef PHY_RADIO_FRAME_GUARD_US
 #define PHY_RADIO_FRAME_GUARD_US (200)
 #endif /* PHY_RADIO_FRAME_GUARD_US */
@@ -86,6 +90,14 @@ extern "C" {
 #define PHY_RADIO_NUM_TICKS_IN_FRAME (PHY_RADIO_NUM_SLOTS_IN_FRAME * PHY_RADIO_NUM_TICKS_IN_SLOT)
 #endif /* PHY_RADIO_NUM_TICKS_IN_FRAME */
 
+#ifndef PHY_RADIO_PERIPHERAL_RX_SLOT
+#define PHY_RADIO_PERIPHERAL_RX_SLOT (0)
+#endif /* PHY_RADIO_PERIPHERAL_RX_SLOT */
+
+#ifndef PHY_RADIO_CENTRAL_TX_SLOT
+#define PHY_RADIO_CENTRAL_TX_SLOT (0)
+#endif /* PHY_RADIO_CENTRAL_TX_SLOT */
+
 #ifndef PHY_RADIO_BROADCAST_ADDR
 // It might be a problem that this is not linked to RFM69_DEFAULT_BROADCAST_ADDR
 #define PHY_RADIO_BROADCAST_ADDR (0xFF)
@@ -95,6 +107,7 @@ extern "C" {
 #define PHY_RADIO_PACKET_TYPE_SHIFT 5
 
 typedef struct phyRadio phyRadio_t;
+typedef struct phyRadioSlotHandler phyRadioSlotHandler_t;
 
 typedef struct phyRadioPacket   phyRadioPacket_t;
 typedef struct phyRadioSlotItem phyRadioSlotItem_t;
@@ -136,22 +149,35 @@ typedef struct {
 
 typedef enum {
     // This is a NOPE event
-    FRAME_SYNC_ERROR_EVENT,
+    SLOT_HANDLER_ERROR_EVENT,
     // This event is triggered when a peripheral detects and locks on to a first sync
-    FRAME_SYNC_START_EVENT,
+    SLOT_HANDLER_START_EVENT,
+    // This event is triggered when a new frame starts and an sync is queued for send
+    SLOT_HANDLER_NEW_FRAME_SYNC_SENT_EVENT,
     // This event is triggered at the start of a new frame, after this follows a guard period
-    FRAME_SYNC_NEW_FRAME_EVENT,
+    SLOT_HANDLER_NEW_FRAME_EVENT,
     // This event is triggered at the start of the first slot in the frame
-    FRAME_SYNC_FIRST_SLOT_START_EVENT,
+    SLOT_HANDLER_FIRST_SLOT_START_EVENT,
     // This event is triggered at the start of a slot, after this follows a guard period
-    FRAME_SYNC_SLOT_GUARD_EVENT,
-    // This event is triggered when it is time to turn of RX if nothing has been received
-    FRAME_SYNC_SLOT_END_GUARD_EVENT,
+    SLOT_HANDLER_SLOT_GUARD_EVENT,
     // This event is triggered at the end of the slot guard, after this the active part of the slot follows
-    FRAME_SYNC_SLOT_START_EVENT,
-} phyRadioFrameSyncEvent_t;
+    SLOT_HANDLER_SLOT_START_EVENT,
+    // This event is triggered when it is time to turn of RX if nothing has been received
+    SLOT_HANDLER_SLOT_END_GUARD_EVENT,
+} phyRadioSlotHandlerEvent_t;
 
-int32_t phyRadioFrameSyncCallback(phyRadio_t *inst, phyRadioFrameSyncEvent_t event, uint16_t slot_index);
+typedef enum {
+    PHY_RADIO_MODE_FRAME_ERROR = -20093,
+    PHY_RADIO_MODE_TIMER_ERROR = -20092,
+    PHY_RADIO_MODE_HAL_ERROR   = -20091,
+    PHY_RADIO_MODE_IDLE        = 0,
+    PHY_RADIO_MODE_SCAN,
+    PHY_RADIO_MODE_CENTRAL,
+    PHY_RADIO_MODE_PERIPHERAL,
+    PHY_RADIO_MODE_ALOHA,
+} phyRadioMode_t;
+
+int32_t phyRadioSlotHandlerCallback(phyRadio_t *inst, phyRadioSlotHandlerEvent_t event, uint16_t slot_index);
 
 #ifdef __cplusplus
 }

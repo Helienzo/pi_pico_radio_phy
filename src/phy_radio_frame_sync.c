@@ -23,6 +23,7 @@
 #include "phy_radio_frame_sync.h"
 #include "string.h"
 #include <stdarg.h>
+#include <stdio.h>
 
 // Weakly defined logging function - can be overridden by user
 __attribute__((weak)) void radio_log(const char *format, ...) {
@@ -56,6 +57,10 @@ __attribute__((weak)) void radio_log(const char *format, ...) {
 #define LOG_V_DEBUG(f_, ...)
 #endif /* PHY_RADIO_FRAME_SYNC_LOG_V_DEBUG_ENABLE */
 
+#ifndef MODULO_INC
+#define MODULO_INC(value, base) (((value) + 1) % (base))
+#endif /* MODULO_INC */
+
 #ifndef UNUSED
 #define UNUSED(x) (void)(x)
 #endif
@@ -63,18 +68,33 @@ __attribute__((weak)) void radio_log(const char *format, ...) {
 static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t sync_time);
 static int32_t new_frame_callback(phyRadioTimer_t *interface);
 static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t index);
+static int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket_t **sync_packet);
 
 // This timer triggers at the start of a new frame, this marks the start of the frames first guard period where the radio can be managed
 static int32_t new_frame_callback(phyRadioTimer_t *interface) {
     // Get the current phy radio instance
     phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
 
+    // Increment the frame counter
+    inst->frame_counter = MODULO_INC(inst->frame_counter, inst->sync_interval);
+
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
         inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
     } else {
-        int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_NEW_FRAME_EVENT, 0);
+        // Manage the slot
+        int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_NEW_FRAME_EVENT, 0);
         if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
             inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+        }
+
+        // Check if we should send sync this frame
+        if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
+            int32_t res = phyRadioFrameSyncQueueNextSync(inst, inst->active_item);
+            if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                LOG("Failed to queue sync %i\n", res);
+                inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+                return res;
+            }
         }
     }
 
@@ -86,50 +106,64 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
     // Get the current phy radio instance
     phyRadioFrameSync_t *inst = CONTAINER_OF(interface, phyRadioFrameSync_t, radio_timer);
 
-    phyRadioFrameSyncEvent_t frame_event     = FRAME_SYNC_ERROR_EVENT;
-    uint8_t                  interrupt_event = PHY_RADIO_FRAME_SYNC_INT_IDLE;
+    phyRadioSlotHandlerEvent_t frame_event     = SLOT_HANDLER_ERROR_EVENT;
+    uint8_t                    interrupt_event = PHY_RADIO_FRAME_SYNC_INT_IDLE;
 
-    if (frame_index == 0) {
-        // This marks the start of the first slot
-        // Get the current time
-        inst->slot_start_time = time_us_64();
-        inst->slot_index = 0;
-        frame_event = FRAME_SYNC_FIRST_SLOT_START_EVENT;
-        interrupt_event = PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT;
-    } else {
-        // Figure out where in the slot we are
-        uint16_t slot_pos = frame_index % PHY_RADIO_NUM_TICKS_IN_SLOT;
-        switch (slot_pos) {
-            case 0: {
-                // This markes the end of the guard and start of the active slot part
-                frame_event     = FRAME_SYNC_SLOT_START_EVENT;
-                interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
-            } break;
-            case 1: {
-                // This marks the start of the end guard, should allways be processed in interrupt context
-                int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_END_GUARD_EVENT, inst->slot_index);
-                if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+    // Figure out where in the slot we are
+    switch (frame_index) {
+        case PHY_RADIO_TIMER_FIRST_SLOT_GUARD_START: {
+            // This marks the start of the first slot
+            // Get the current time
+            inst->slot_start_time = phyRadioTimerGetTime();
+            inst->slot_index = 0;
+
+            frame_event = SLOT_HANDLER_FIRST_SLOT_START_EVENT;
+            interrupt_event = PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT;
+
+            // Check if we should send sync this frame
+            if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
+                inst->pkt_sent_time = inst->slot_start_time;
+
+                // Set the first slot to TX since we have a sync packet queued
+                int32_t res = phyRadioSlotHandlerSetSlotCur(inst->slot_handler, PHY_RADIO_CENTRAL_TX_SLOT, PHY_RADIO_SLOT_TX);
+                if (res != PHY_RADIO_SLOT_HANDLER_SUCCESS) {
+                    LOG("Failed to set slot to TX %i\n", res);
                     inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+                    return res;
                 }
-            } return true;
-            case 2: {
-                // This marks the start of the slot guard
-                inst->slot_start_time = time_us_64();
-                inst->slot_index++;
-                frame_event     = FRAME_SYNC_SLOT_GUARD_EVENT;
-                interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
-            } break;
-           default:
-                // Should never happen
-                break;
-        }
+            }
+        } break;
+        case PHY_RADIO_TIMER_SLOT_START: {
+            // This markes the end of the guard and start of the active slot part
+            frame_event     = SLOT_HANDLER_SLOT_START_EVENT;
+            interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
+        } break;
+        case PHY_RADIO_TIMER_SLOT_END_GUARD: {
+            // This marks the start of the end guard, should allways be processed in interrupt context
+            int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_SLOT_END_GUARD_EVENT, inst->slot_index);
+            if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+                return res;
+            }
+        } return true;
+        case PHY_RADIO_TIMER_SLOT_GUARD_START: {
+            // This marks the start of the slot guard
+            inst->slot_start_time = phyRadioTimerGetTime();
+            inst->slot_index++;
+            frame_event     = SLOT_HANDLER_SLOT_GUARD_EVENT;
+            interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
+        } break;
+        default:
+            // Should never happen
+            break;
     }
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
         // Radio is busy, process in main context
         inst->timer_interrupt = interrupt_event;
     } else {
-        int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, frame_event, inst->slot_index);
+
+        int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, frame_event, inst->slot_index);
         if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
             inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
         }
@@ -178,7 +212,7 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
     // TODO this else statement could be an elif SCAN to clarify
     } else {
         // We know how long it took to send the sync message, but we need to compensate for the guard infront of it
-        sync_time += PHY_RADIO_SLOT_GUARD_TIME_US;
+        sync_time += inst->frame_config->slots[0].slot_start_guard_us;
 
         // Start combined timer with sync_time as offset
         int32_t res = phyRadioTimerStartCombinedTimer(&inst->radio_timer, tick_timer_callback, new_frame_callback, inst->frame_duration, PHY_RADIO_SLOT_GUARD_TIME_US, sync_time);
@@ -188,13 +222,13 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
         }
 
         // Notify that a first frame has started
-        return phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_START_EVENT, 0);
+        return phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_START_EVENT, 0);
     }
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }
 
-int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket_t **sync_packet) {
+static int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket_t **sync_packet) {
 
     // Queue package in hal layer
     cBufferClear(inst->sync_packet.pkt_buffer); // This is safe, lets not check retvals
@@ -234,23 +268,10 @@ int32_t phyRadioFrameSyncQueueNextSync(phyRadioFrameSync_t *inst, phyRadioPacket
     return res;
 }
 
-int32_t phyRadioFrameSyncSendNextSync(phyRadioFrameSync_t *inst) {
-
-    // Store the absolute time when this packet tx started
-    inst->pkt_sent_time = time_us_64();
-
-    // Trigger send of a queued packet
-    int32_t res = halRadioQueueSend(inst->hal_radio_inst, false);
-
-    // Should we check the result here or just pass it?
-    // Could be usefull if we want to know specifically that it was the sync that failed
-    return res;
-}
-
 int32_t phyRadioFrameSyncNotifySyncSent(phyRadioFrameSync_t *inst, halRadioPackage_t* hal_packet) {
     inst->pkt_sent_time = hal_packet->time - inst->pkt_sent_time;
     // If this calculation was correct the send time should never be more than 2ms
-    // This protects from errounous behaviour, could perhaps be removed
+    // This protects from erroneous behaviour, could perhaps be removed
     if (inst->pkt_sent_time < PHY_RADIO_SYNC_MSG_MAX_TIME) {
         inst->central_sync_msg_time = (uint16_t)inst->pkt_sent_time;
     }
@@ -297,28 +318,47 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
     switch(inst->timer_interrupt) {
        case PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME: {
             inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
-            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_NEW_FRAME_EVENT, inst->slot_index);
+            int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_NEW_FRAME_EVENT, inst->slot_index);
+            if (res != PHY_RADIO_SLOT_HANDLER_SUCCESS) {
+                return res;
+            }
+
+            // Check if we should send sync this frame
+            if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
+                // Queue the sync packet
+                int32_t res = phyRadioFrameSyncQueueNextSync(inst, inst->active_item);
+                if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                    LOG("Failed to queue sync %i\n", res);
+                    return res;
+                }
+            }
+
             return res;
         } break;
 
         case PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT: {
             inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
-            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_FIRST_SLOT_START_EVENT, inst->slot_index);
+            // Manage the packet send if we could not send it in ISR context
+            if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
+                inst->pkt_sent_time = phyRadioTimerGetTime();
+            }
+
+            int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_FIRST_SLOT_START_EVENT, inst->slot_index);
             return res;
         } break;
         case PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD: {
             inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
-            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_GUARD_EVENT, inst->slot_index);
+            int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_SLOT_GUARD_EVENT, inst->slot_index);
             return res;
         } break;
         case PHY_RADIO_FRAME_SYNC_INT_SLOT_START: {
             inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
-            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_START_EVENT, inst->slot_index);
+            int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_SLOT_START_EVENT, inst->slot_index);
             return res;
         } break;
         case PHY_RADIO_FRAME_SYNC_INT_SLOT_END_GUARD: {
             inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_IDLE;
-            int32_t res = phyRadioFrameSyncCallback(inst->phy_radio_inst, FRAME_SYNC_SLOT_END_GUARD_EVENT, inst->slot_index);
+            int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_SLOT_END_GUARD_EVENT, inst->slot_index);
             return res;
         } break;
         case PHY_RADIO_FRAME_SYNC_INT_ERROR:
@@ -385,7 +425,7 @@ int32_t phyRadioFrameSyncTimeLeftInSlot(phyRadioFrameSync_t *inst, uint8_t slot)
     }
 
     // Compute how long we have been in this slot, and check that we have not overflowed
-    uint64_t time_in_slot = time_us_64() - inst->slot_start_time;
+    uint64_t time_in_slot = phyRadioTimerGetTime() - inst->slot_start_time;
     uint16_t slot_length_us = inst->frame_config->slots[slot].slot_length_us;
 
     if (time_in_slot > slot_length_us) {
@@ -424,12 +464,13 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     
     // Clear the instance
     memset(inst, 0, sizeof(phyRadioFrameSync_t));
-    
+
     // Set the hal radio pointers and address
-    inst->phy_radio_inst = init_struct->phy_radio_inst;
+    inst->slot_handler   = init_struct->slot_handler;
     inst->hal_radio_inst = init_struct->hal_radio_inst;
     inst->hal_interface  = init_struct->hal_interface;
     inst->my_address     = init_struct->my_address;
+    inst->active_item    = init_struct->active_item;
     inst->mode           = PHY_RADIO_FRAME_SYNC_MODE_IDLE;
     
     // Initialize sync message buffer
@@ -457,12 +498,11 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     inst->error_prev = 0.0f;
     inst->integral = 0.0f;
 
-    // Calculate a best effort sync message time estimate to initialize this value
-    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, init_struct->hal_bitrate, PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE);
+    // Initialize frame counter and sync interval
+    inst->frame_counter = 0;
+    inst->sync_interval = 1; // Default is to send sync every frame
 
-    inst->frame_config               = NULL;
-    inst->timer_config.num_ticks     = 0;
-    inst->timer_config.tick_sequence = NULL;
+    inst->frame_config = NULL;
 
     LOG_DEBUG("Frame sync initialized\n");
 
@@ -482,6 +522,9 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     inst->pkt_sent_time         = 0;
     inst->central_sync_msg_time = 0;
     inst->slot_start_time       = 0;
+
+    // Calculate a best effort sync message time estimate to initialize this value
+    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE);
 
     inst->mode = PHY_RADIO_FRAME_SYNC_MODE_IDLE;
 
@@ -511,15 +554,16 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
         // Sum the elements in the frame
         frame_length_us += frame->slots[i].slot_start_guard_us;
         frame_length_us += frame->slots[i].slot_length_us;
+        frame_length_us += frame->slots[i].slot_end_guard_us;
     }
 
     // Add the end guard
     frame_length_us += frame->end_guard;
-    frame->frame_length_us = frame_length_us;
+
+    // Configure the frame
+    frame->frame_length_us = phyRadioFrameConfig(&inst->timer_config, frame, frame_length_us, inst->_frame_ticks, tick_index);
 
     // Prepare configuration
-    inst->timer_config.num_ticks     = tick_index;
-    inst->timer_config.tick_sequence = inst->_frame_ticks;
     inst->frame_duration             = frame->frame_length_us;
     inst->float_frame_duration       = (float)frame->frame_length_us;
 
@@ -581,6 +625,42 @@ int32_t phyRadioFrameGetLatestCustomData(phyRadioFrameSync_t *inst, uint8_t **da
 #if PHY_RADIO_SYNC_GEN_DATA_SIZE > 0
     *data = inst->sync_packet_received_gen_data;
 #endif /* PHY_RADIO_SYNC_GEN_DATA_SIZE */
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
+int32_t phyRadioFrameSyncSetInterval(phyRadioFrameSync_t *inst, uint16_t sync_interval) {
+    if (inst == NULL) {
+        return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
+    }
+
+    inst->sync_interval = sync_interval;
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
+int32_t phyRadioFrameSyncResetFrameCounter(phyRadioFrameSync_t *inst) {
+    if (inst == NULL) {
+        return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
+    }
+
+    inst->frame_counter = 0;
+
+    return PHY_RADIO_FRAME_SYNC_SUCCESS;
+}
+
+int32_t phyRadioFrameSyncGetFrameCount(phyRadioFrameSync_t *inst) {
+    if (inst == NULL) {
+        return PHY_RADIO_FRAME_SYNC_NULL_ERROR;
+    }
+
+    return inst->frame_counter;
+}
+
+int32_t phyRadioFrameSyncEventInQueue(phyRadioFrameSync_t *inst) {
+    if (inst->timer_interrupt > 0) {
+        return PHY_RADIO_FRAME_SYNC_INTERRUPT_QUEUE;
+    }
 
     return PHY_RADIO_FRAME_SYNC_SUCCESS;
 }

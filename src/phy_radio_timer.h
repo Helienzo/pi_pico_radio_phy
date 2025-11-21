@@ -23,7 +23,8 @@
 #ifndef PHY_RADIO_TIMER_H
 #define PHY_RADIO_TIMER_H
 
-#include "pico/stdlib.h"
+#include <stdint.h>
+#include <stdbool.h>
 
 typedef enum {
     PHY_RADIO_TIMER_ACTIVE            = 1,
@@ -36,11 +37,19 @@ typedef enum {
     PHY_RADIO_TIMER_NOT_ACTIVE_ERROR  = -21006,
 } phyRadioTimerErr_t;
 
-typedef struct phyRadioTimer phyRadioTimer_t;
+// Main timer conig
+typedef struct phyRadioTimer       phyRadioTimer_t;
 typedef struct phyRadioTimerConfig phyRadioTimerConfig_t;
-typedef struct phyRadioTaskTimer phyRadioTaskTimer_t;
-typedef struct phyRadioFastTaskTimer phyRadioFastTaskTimer_t;
 
+// Task timer config
+typedef struct phyRadioTaskTimer         phyRadioTaskTimer_t;
+typedef struct phyRadioTaskTimerInternal phyRadioTaskTimerInternal_t;
+
+// Fast task timer config
+typedef struct phyRadioFastTaskTimer         phyRadioFastTaskTimer_t;
+typedef struct phyRadioFastTaskTimerInternal phyRadioFastTaskTimerInternal_t;
+
+// Internal structure
 typedef struct phyRadioTimerInternal phyRadioTimerInternal_t;
 
 typedef int32_t (*phyRadioFrameTimerCb_t)(phyRadioTimer_t *inst);
@@ -52,30 +61,40 @@ struct phyRadioTimer {
     bool                     initialized;
     phyRadioTimerInternal_t *_private;
 
-    phyRadioFrameTimerCb_t      frame_cb;
-    phyRadioTickTimerCb_t      tick_cb;
+    phyRadioFrameTimerCb_t frame_cb;
+    phyRadioTickTimerCb_t  tick_cb;
 
     // Tick sequence configurations
     uint16_t               tick_index;
     phyRadioTimerConfig_t *timer_config;
 };
 
-struct phyRadioTimerConfig {
-    uint16_t *tick_sequence; // Array of tick intervals
-    uint16_t  num_ticks;     // Number of elements in the array
-};
-
 struct phyRadioTaskTimer {
-    bool                  initialized;
-    alarm_id_t            task_alarm_id;    // Timer alarm used for time dependent tasks
-    phyRadioTaskTimerCb_t task_cb;
+    bool                         initialized;
+    bool                         active;
+    phyRadioTaskTimerCb_t        task_cb;
+    phyRadioTaskTimerInternal_t *_private;
 };
 
 struct phyRadioFastTaskTimer {
-    bool                      initialized;
-    bool                      active;           // Whether the fast task timer is currently running
-    phyRadioFastTaskTimerCb_t task_cb;
+    bool                             initialized;
+    bool                             active;
+    phyRadioFastTaskTimerCb_t        task_cb;
+    phyRadioFastTaskTimerInternal_t *_private;
 };
+
+/**
+ * Get the current time
+ * Returns: absolute time
+ */
+uint64_t phyRadioTimerGetTime(void);
+
+/**
+ * Blocking sleep function
+ * Input: Time in us
+ * Returns: phyRadioTimerErr_t
+ */
+int32_t phyRadioTimerSleep(uint32_t us);
 
 /**
  * Init the phy radio timer
@@ -106,13 +125,6 @@ int32_t phyRadioTimerDeInit(phyRadioTimer_t *inst);
  * Returns: phyRadioTimerErr_t
  */
 int32_t phyRadioTimerCancelAll(phyRadioTimer_t *inst);
-
-/**
- * Stop an ongoing tick timer without complete disable
- * Input: phyRadioTimer instance
- * Returns: phyRadioTimerErr_t
- */
-int32_t phyRadioTimerStopTickTimer(phyRadioTimer_t *inst);
 
 /**
  * Start both a frame timer and a tick timer that triggers at a regular interval after the frame timer
