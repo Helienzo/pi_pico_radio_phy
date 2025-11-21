@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 #include "c_buffer.h"
-#include "pico/stdlib.h"
+#include "stdint.h"
 
 #ifndef PHY_RADIO_SYNC_GEN_DATA_SIZE
 #define PHY_RADIO_SYNC_GEN_DATA_SIZE (1)

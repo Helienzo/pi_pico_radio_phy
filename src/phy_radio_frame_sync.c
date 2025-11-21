@@ -23,6 +23,7 @@
 #include "phy_radio_frame_sync.h"
 #include "string.h"
 #include <stdarg.h>
+#include "phy_radio_timer_default_config.h"
 
 // Weakly defined logging function - can be overridden by user
 __attribute__((weak)) void radio_log(const char *format, ...) {
@@ -88,8 +89,6 @@ static int32_t new_frame_callback(phyRadioTimer_t *interface) {
 
         // Check if we should send sync this frame
         if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
-            // Queue the sync packet
-            phyRadioPacket_t *sync_packet = NULL;
             int32_t res = phyRadioFrameSyncQueueNextSync(inst, inst->active_item);
             if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
                 LOG("Failed to queue sync %i\n", res);
@@ -214,7 +213,7 @@ static int32_t syncWithCentral(phyRadioFrameSync_t *inst, uint64_t toa, uint16_t
     // TODO this else statement could be an elif SCAN to clarify
     } else {
         // We know how long it took to send the sync message, but we need to compensate for the guard infront of it
-        sync_time += PHY_RADIO_SLOT_GUARD_TIME_US;
+        sync_time += inst->frame_config->slots[0].slot_start_guard_us;
 
         // Start combined timer with sync_time as offset
         int32_t res = phyRadioTimerStartCombinedTimer(&inst->radio_timer, tick_timer_callback, new_frame_callback, inst->frame_duration, PHY_RADIO_SLOT_GUARD_TIME_US, sync_time);
@@ -328,7 +327,6 @@ int32_t phyRadioFrameSyncProcess(phyRadioFrameSync_t *inst) {
             // Check if we should send sync this frame
             if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
                 // Queue the sync packet
-                phyRadioPacket_t *sync_packet = NULL;
                 int32_t res = phyRadioFrameSyncQueueNextSync(inst, inst->active_item);
                 if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
                     LOG("Failed to queue sync %i\n", res);
@@ -531,6 +529,9 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
     inst->central_sync_msg_time = 0;
     inst->slot_start_time       = 0;
 
+    // Calculate a best effort sync message time estimate to initialize this value
+    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE);
+
     inst->mode = PHY_RADIO_FRAME_SYNC_MODE_IDLE;
 
     // The timer MUST be turned of before changing any parameters
@@ -559,6 +560,7 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
         // Sum the elements in the frame
         frame_length_us += frame->slots[i].slot_start_guard_us;
         frame_length_us += frame->slots[i].slot_length_us;
+        frame_length_us += frame->slots[i].slot_end_guard_us;
     }
 
     // Add the end guard

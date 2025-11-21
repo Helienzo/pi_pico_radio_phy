@@ -32,6 +32,11 @@ extern "C" {
 #include "phy_radio_timer.h"
 #include "phy_radio_common.h"
 #include "phy_radio_slot_handler.h"
+#ifndef PHY_RADIO_FRAME_SYNC_DEFAULT_TIMER
+#include "phy_radio_timer_config.h"
+#else
+#include "phy_radio_timer_default_config.h"
+#endif
 
 #ifndef CONTAINER_OF
 #define CONTAINER_OF(ptr, type, member)	(type *)((char *)(ptr) - offsetof(type,member))

@@ -23,6 +23,7 @@
 #include "phy_radio.h"
 #include "string.h"
 #include <stdarg.h>
+#include <stdio.h>
 
 // Weakly defined logging function - can be overridden by user
 __attribute__((weak)) void radio_log(const char *format, ...) {
@@ -117,7 +118,7 @@ static int32_t scanTimerAlarmCallback(phyRadioTaskTimer_t *interface) {
 
 static int32_t packetTimeEstimate(phyRadio_t *inst, uint8_t num_bytes) {
 
-    int32_t time_us = halRadioBitRateToDelayUs(&inst->hal_radio_inst, PHY_RADIO_BIT_RATE, num_bytes);
+    int32_t time_us = halRadioBitRateToDelayUs(&inst->hal_radio_inst, num_bytes);
 
     // Check the result, should never fail
     if (time_us < HAL_RADIO_SUCCESS) {
@@ -230,7 +231,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
 
     if (tdma_scheduler->packet_delay_time_us < PHY_RADIO_MAX_BLOCK_DELAY_TIME_US) {
         // If this time is short we can just sleep here.
-        sleep_us((uint32_t)tdma_scheduler->packet_delay_time_us);
+        sl_udelay_wait((uint32_t)tdma_scheduler->packet_delay_time_us);
     } else {
         // If the wait time is long we need to schedule this as a non blocking task
 
@@ -310,6 +311,11 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
             // Check if we have any active packet in flight, inform higher layer that it has not been sent
             if (inst->tdma_scheduler.in_flight && (inst->tdma_scheduler.active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC)) {
                 cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, send_result);
+            } else if (inst->tdma_scheduler.in_flight && (inst->tdma_scheduler.active_item->type == PHY_RADIO_PKT_INTERNAL_SYNC)) {
+                int32_t res =  phyRadioFrameSyncNotifySyncSent(&inst->tdma_scheduler.frame_sync, hal_packet);
+                if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                    return res;
+                }
             } else {
                 // This would be the sync packet. And it should be fine.
                 LOG("Sent but no packet!??\n");
@@ -329,7 +335,7 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
             return HAL_RADIO_CB_SUCCESS;
         default:
             // Just forwade the error
-            send_result = result;
+            send_result = (phyRadioErr_t)result;
             break;
     }
 
@@ -653,7 +659,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
     return HAL_RADIO_CB_SUCCESS;
 }
 
-static int32_t queuePeakOnTxQueue(phyRadioTdma_t*     scheduler,
+__attribute__((unused)) static int32_t queuePeakOnTxQueue(phyRadioTdma_t*     scheduler,
                                   phyRadioPacket_t**  pkt)
 {
     // Get the next item from the queue without removing it
@@ -720,7 +726,7 @@ static int32_t queuePutInSlot(phyRadioTdma_t*     scheduler,
     return result;
 }
 
-static int32_t queuePutFirstInSlot(phyRadioTdma_t*     scheduler,
+__attribute__((unused)) static int32_t queuePutFirstInSlot(phyRadioTdma_t*     scheduler,
                                    uint8_t             slot,
                                    phyRadioPacket_t*   packet)
 {
@@ -942,6 +948,7 @@ static int32_t initTdmaScheduler(phyRadioTdma_t *inst, const phyRadioTdmaInit_t 
 
 static int32_t sendDuringSlot(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, uint8_t slot) {
     // Check if we are sending any prequeued packages
+    UNUSED(slot);
 
     if (halRadioGetMode(&inst->hal_radio_inst) != HAL_RADIO_IDLE) {
         // The radio is busy, we should not do anything here, wait for packet sent CB
@@ -1417,9 +1424,21 @@ int32_t phyRadioSlotHandlerCallback(phyRadio_t *inst, phyRadioSlotHandlerEvent_t
                     break;
             }
         } break;
-        case SLOT_HANDLER_SLOT_END_GUARD_EVENT:
-            // Currently unused
-            break;
+        case SLOT_HANDLER_SLOT_END_GUARD_EVENT: {
+            // Manage the end guard
+            int32_t cb_res = PHY_RADIO_CB_SUCCESS;
+            // Check if we have any active packet in flight, inform higher layer that send failed
+            if (inst->tdma_scheduler.in_flight && (inst->tdma_scheduler.active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC)) {
+                cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, PHY_RADIO_SEND_FAIL);
+            } else if (inst->tdma_scheduler.in_flight) {
+                inst->tdma_scheduler.in_flight = false;
+            }
+
+            // Ok lets give up, we have failed
+            if (cb_res != PHY_RADIO_SUCCESS) {
+                return cb_res;
+            }
+        } break;
         default:
             break;
     }
@@ -1789,7 +1808,11 @@ int32_t phyRadioSendOnSlot(phyRadio_t *inst, phyRadioPacket_t* packet, bool this
             return sendCentral(inst, packet, this_frame);
         case PHY_RADIO_MODE_SCAN:
             return PHY_RADIO_INVALID_MODE;
+        case PHY_RADIO_MODE_FRAME_ERROR:
+            default:
+            return PHY_RADIO_MODE_FRAME_ERROR;
     }
+
 
     return PHY_RADIO_SUCCESS;
 }
@@ -1803,8 +1826,6 @@ int32_t phyRadioSetSlotIdle(phyRadio_t *inst, uint8_t slot) {
     if (slot > PHY_RADIO_NUM_SLOTS) {
         return PHY_RADIO_INVALID_SLOT;
     }
-
-    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
 
     // Configure the slot
     int32_t res = phyRadioSlotHandlerSetSlotMain(&inst->tdma_scheduler.slot_handler, slot, PHY_RADIO_SLOT_IDLE);
@@ -1825,8 +1846,6 @@ int32_t phyRadioReceiveOnSlot(phyRadio_t *inst, uint8_t slot) {
     if (slot > PHY_RADIO_NUM_SLOTS) {
         return PHY_RADIO_INVALID_SLOT;
     }
-
-    phyRadioTdma_t *tdma_scheduler = &inst->tdma_scheduler;
 
     // Configure the slot
     int32_t res = phyRadioSlotHandlerSetSlotMain(&inst->tdma_scheduler.slot_handler, slot, PHY_RADIO_SLOT_RX);

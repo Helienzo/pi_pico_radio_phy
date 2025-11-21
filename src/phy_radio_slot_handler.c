@@ -157,12 +157,15 @@ static int32_t manageNewFrameStartTimerInterrupt(phyRadioSlotHandler_t *inst, ui
             // Trigger send of any queued packet
             int32_t res = halRadioQueueSend(inst->hal_radio_inst, false);
 
-            if (res != HAL_RADIO_SUCCESS) {
+            if (res == HAL_RADIO_NOTHING_TO_SEND) {
+                // Nothing to do
+            } else if (res != HAL_RADIO_SUCCESS) {
                 LOG("Failed to send %i\n", res);
                 return res;
+            } else {
+                // Packet sent
+                inst->timer_interrupt = SLOT_HANDLER_INT_FRAME_SYNC_SENT;
             }
-
-            inst->timer_interrupt = SLOT_HANDLER_INT_FRAME_SYNC_SENT;
         } break;
         case PHY_RADIO_SLOT_RX:
             // If this is the case we are allready in RX mode, lets hope we get a sync
@@ -278,6 +281,10 @@ static int32_t manageSlotEndGuardTimerInterrupt(phyRadioSlotHandler_t *inst, uin
     switch(inst->slot[inst->current_slot].current_type) {
         case PHY_RADIO_SLOT_TX: {
             // Ignore this interrupt
+            int32_t res = halRadioCancelTransmit(inst->hal_radio_inst, false);
+            if (res != HAL_RADIO_SUCCESS) {
+                return res;
+            }
         } break;
         case PHY_RADIO_SLOT_RX:
 
@@ -471,6 +478,7 @@ int32_t phyRadioSlotHandlerEventManager(phyRadioSlotHandler_t *inst, phyRadioSlo
             return manageSlotEndGuardTimerInterrupt(inst, slot_index);
         case SLOT_HANDLER_ERROR_EVENT:
         default:
+            LOG("ERROR %i\n", event);
             return PHY_RADIO_SLOT_HANDLER_GEN_ERROR;
     }
 
