@@ -96,6 +96,7 @@ target_link_libraries(radio_phy_tdd_central
 target_compile_definitions(radio_phy_tdd_central PRIVATE
     HAL_RADIO_SLOT_GPIO_DEBUG=1
     HAL_RADIO_PIN_TX_RX=12
+    PHY_RADIO_FRAME_SYNC_DEFAULT_TIMER
 )
 
 # Add the standard include files to the build

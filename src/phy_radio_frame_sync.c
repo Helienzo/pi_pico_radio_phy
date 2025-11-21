@@ -23,7 +23,6 @@
 #include "phy_radio_frame_sync.h"
 #include "string.h"
 #include <stdarg.h>
-#include "phy_radio_timer_default_config.h"
 
 // Weakly defined logging function - can be overridden by user
 __attribute__((weak)) void radio_log(const char *format, ...) {
@@ -559,11 +558,11 @@ int32_t phyRadioFrameSyncSetStructure(phyRadioFrameSync_t *inst, phyRadioFrameCo
 
     // Add the end guard
     frame_length_us += frame->end_guard;
-    frame->frame_length_us = frame_length_us;
+
+    // Configure the frame
+    frame->frame_length_us = phyRadioFrameConfig(&inst->timer_config, frame_length_us, inst->_frame_ticks, tick_index);
 
     // Prepare configuration
-    inst->timer_config.num_ticks     = tick_index;
-    inst->timer_config.tick_sequence = inst->_frame_ticks;
     inst->frame_duration             = frame->frame_length_us;
     inst->float_frame_duration       = (float)frame->frame_length_us;
 
