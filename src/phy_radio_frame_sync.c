@@ -502,12 +502,7 @@ int32_t phyRadioFrameSyncInit(phyRadioFrameSync_t *inst, const phyRadioFrameSync
     inst->frame_counter = 0;
     inst->sync_interval = 1; // Default is to send sync every frame
 
-    // Calculate a best effort sync message time estimate to initialize this value
-    inst->central_sync_msg_time = halRadioBitRateToDelayUs(inst->hal_radio_inst, PHY_RADIO_FRAME_SYNC_SYNC_MSG_SIZE);
-
-    inst->frame_config               = NULL;
-    inst->timer_config.num_ticks     = 0;
-    inst->timer_config.tick_sequence = NULL;
+    inst->frame_config = NULL;
 
     LOG_DEBUG("Frame sync initialized\n");
 
