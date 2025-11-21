@@ -377,11 +377,10 @@ int32_t phyRadioSlotHandlerDeInit(phyRadioSlotHandler_t *inst) {
         return PHY_RADIO_SLOT_HANDLER_NULL_ERROR;
     }
 
-    // Reset module state
-
     LOG_DEBUG("Slot handler deinitialized\n");
 
-    return PHY_RADIO_SLOT_HANDLER_SUCCESS;
+    // Reset module state
+    return phyRadioSlotHandlerResetSlots(inst);
 }
 
 int32_t phyRadioSlotHandlerProcess(phyRadioSlotHandler_t *inst) {
