@@ -27,6 +27,7 @@
 #include "hardware/irq.h"
 #include "hardware/clocks.h"
 #include "math.h"
+#include "phy_radio_common.h"
 #include "phy_radio_timer_default_config.h"
 
 #ifndef PHY_RADIO_TIMER_PWM_SLICE
@@ -108,7 +109,25 @@ static void frame_timer_callback(void) {
         }
 
         if (inst->tick_cb != NULL) {
-            inst->tick_cb(inst, inst->tick_index - 3);
+            uint16_t tick_index = inst->tick_index - 3;
+            if (tick_index == 0) {
+                inst->tick_cb(inst, PHY_RADIO_TIMER_FIRST_SLOT_GUARD_START);
+            } else {
+                uint32_t slot_pos = tick_index % PHY_RADIO_NUM_TICKS_IN_SLOT;
+                switch(slot_pos) {
+                    case 0:
+                        inst->tick_cb(inst, PHY_RADIO_TIMER_SLOT_START);
+                        break;
+                    case 1:
+                        inst->tick_cb(inst, PHY_RADIO_TIMER_SLOT_END_GUARD);
+                        break;
+                    case 2:
+                        inst->tick_cb(inst, PHY_RADIO_TIMER_SLOT_GUARD_START);
+                        break;
+                    default:
+                        panic("Invalid time");
+                }
+            }
         } else {
             panic("Tick timer callback is NULL\n");
         }

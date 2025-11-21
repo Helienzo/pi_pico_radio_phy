@@ -109,54 +109,52 @@ static int32_t tick_timer_callback(phyRadioTimer_t *interface, uint16_t frame_in
     phyRadioSlotHandlerEvent_t frame_event     = SLOT_HANDLER_ERROR_EVENT;
     uint8_t                    interrupt_event = PHY_RADIO_FRAME_SYNC_INT_IDLE;
 
-    if (frame_index == 0) {
-        // This marks the start of the first slot
-        // Get the current time
-        inst->slot_start_time = phyRadioTimerGetTime();
-        inst->slot_index = 0;
+    // Figure out where in the slot we are
+    switch (frame_index) {
+        case PHY_RADIO_TIMER_FIRST_SLOT_GUARD_START: {
+            // This marks the start of the first slot
+            // Get the current time
+            inst->slot_start_time = phyRadioTimerGetTime();
+            inst->slot_index = 0;
 
-        frame_event = SLOT_HANDLER_FIRST_SLOT_START_EVENT;
-        interrupt_event = PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT;
+            frame_event = SLOT_HANDLER_FIRST_SLOT_START_EVENT;
+            interrupt_event = PHY_RADIO_FRAME_SYNC_INT_FIRST_SLOT;
 
-        // Check if we should send sync this frame
-        if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
-            inst->pkt_sent_time = inst->slot_start_time;
+            // Check if we should send sync this frame
+            if (inst->frame_counter == 0 && inst->mode == PHY_RADIO_FRAME_SYNC_MODE_CENTRAL) {
+                inst->pkt_sent_time = inst->slot_start_time;
 
-            // Set the first slot to TX since we have a sync packet queued
-            int32_t res = phyRadioSlotHandlerSetSlotCur(inst->slot_handler, PHY_RADIO_CENTRAL_TX_SLOT, PHY_RADIO_SLOT_TX);
-            if (res != PHY_RADIO_SLOT_HANDLER_SUCCESS) {
-                LOG("Failed to set slot to TX %i\n", res);
-                inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
-                return res;
-            }
-        }
-    } else {
-        // Figure out where in the slot we are
-        uint16_t slot_pos = frame_index % PHY_RADIO_NUM_TICKS_IN_SLOT;
-        switch (slot_pos) {
-            case 0: {
-                // This markes the end of the guard and start of the active slot part
-                frame_event     = SLOT_HANDLER_SLOT_START_EVENT;
-                interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
-            } break;
-            case 1: {
-                // This marks the start of the end guard, should allways be processed in interrupt context
-                int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_SLOT_END_GUARD_EVENT, inst->slot_index);
-                if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                // Set the first slot to TX since we have a sync packet queued
+                int32_t res = phyRadioSlotHandlerSetSlotCur(inst->slot_handler, PHY_RADIO_CENTRAL_TX_SLOT, PHY_RADIO_SLOT_TX);
+                if (res != PHY_RADIO_SLOT_HANDLER_SUCCESS) {
+                    LOG("Failed to set slot to TX %i\n", res);
                     inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+                    return res;
                 }
-            } return true;
-            case 2: {
-                // This marks the start of the slot guard
-                inst->slot_start_time = phyRadioTimerGetTime();
-                inst->slot_index++;
-                frame_event     = SLOT_HANDLER_SLOT_GUARD_EVENT;
-                interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
-            } break;
-           default:
-                // Should never happen
-                break;
-        }
+            }
+        } break;
+        case PHY_RADIO_TIMER_SLOT_START: {
+            // This markes the end of the guard and start of the active slot part
+            frame_event     = SLOT_HANDLER_SLOT_START_EVENT;
+            interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_START;
+        } break;
+        case PHY_RADIO_TIMER_SLOT_END_GUARD: {
+            // This marks the start of the end guard, should allways be processed in interrupt context
+            int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_SLOT_END_GUARD_EVENT, inst->slot_index);
+            if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
+                inst->mode = PHY_RADIO_FRAME_SYNC_MODE_HAL_ERROR;
+            }
+        } return true;
+        case PHY_RADIO_TIMER_SLOT_GUARD_START: {
+            // This marks the start of the slot guard
+            inst->slot_start_time = phyRadioTimerGetTime();
+            inst->slot_index++;
+            frame_event     = SLOT_HANDLER_SLOT_GUARD_EVENT;
+            interrupt_event = PHY_RADIO_FRAME_SYNC_INT_SLOT_GUARD;
+        } break;
+        default:
+            // Should never happen
+            break;
     }
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
