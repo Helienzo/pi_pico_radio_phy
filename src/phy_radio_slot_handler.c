@@ -83,7 +83,7 @@ static int32_t manageNewFrameTimerInterrupt(phyRadioSlotHandler_t *inst, uint16_
     inst->current_slot = slot_index;
 
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
-    // Inidicate new frame by toggling the GPIO
+    // Indicate new frame by toggling the GPIO
     gpio_put(HAL_RADIO_PIN_TX_RX, 0);
     gpio_put(HAL_RADIO_PIN_TX_RX, 1);
     gpio_put(HAL_RADIO_PIN_TX_RX, 0);
@@ -150,7 +150,7 @@ static int32_t manageNewFrameStartTimerInterrupt(phyRadioSlotHandler_t *inst, ui
     switch(inst->slot[inst->current_slot].current_type) {
         case PHY_RADIO_SLOT_TX: {
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
-            // Inidicate current state using GPIO
+            // Indicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 1);
 #endif
 
@@ -170,7 +170,7 @@ static int32_t manageNewFrameStartTimerInterrupt(phyRadioSlotHandler_t *inst, ui
         case PHY_RADIO_SLOT_RX:
             // If this is the case we are allready in RX mode, lets hope we get a sync
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
-            // Inidicate current state using GPIO
+            // Indicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 0);
 #endif
             break;
@@ -252,14 +252,14 @@ static int32_t manageSlotStartTimerInterrupt(phyRadioSlotHandler_t *inst, uint16
     switch(inst->slot[inst->current_slot].current_type) {
         case PHY_RADIO_SLOT_TX: {
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
-            // Inidicate current state using GPIO
+            // Indicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 1);
 #endif
         } break;
         case PHY_RADIO_SLOT_RX:
             // If this is the case we are allready in RX mode, lets hope we get a sync
 #ifdef HAL_RADIO_SLOT_GPIO_DEBUG
-            // Inidicate current state using GPIO
+            // Indicate current state using GPIO
             gpio_put(HAL_RADIO_PIN_TX_RX, 0);
 #endif
             break;
@@ -445,7 +445,7 @@ int32_t phyRadioSlotHandlerSetSlotMain(phyRadioSlotHandler_t *inst, uint8_t slot
 }
 
 int32_t phyRadioSlotHandlerRestoreSlots(phyRadioSlotHandler_t *inst) {
-    // Loop over all slots and manage their current type configuraion
+    // Loop over all slots and manage their current type configuration
     for (int i = 0; i < PHY_RADIO_NUM_SLOTS; i++) {
         // If it was a temporary type set it back to main type
         if (inst->slot[i].current_type != inst->slot[i].main_type) {

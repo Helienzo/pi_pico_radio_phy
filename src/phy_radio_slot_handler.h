@@ -50,7 +50,6 @@ typedef enum {
  * Initialization structure for slot handler module
  */
 typedef struct {
-    // Add initialization parameters here
     phyRadio_t          *phy_radio_inst;
     halRadio_t          *hal_radio_inst;
     halRadioInterface_t *hal_interface;
@@ -96,30 +95,66 @@ int32_t phyRadioSlotHandlerInit(phyRadioSlotHandler_t *inst, const phyRadioSlotH
 int32_t phyRadioSlotHandlerDeInit(phyRadioSlotHandler_t *inst);
 
 /**
- * Process function call
+ * Set current slot type (temporary override)
  * Input: phyRadioSlotHandler instance
+ * Input: slot - Slot index to configure
+ * Input: mode - Slot type (IDLE, RX, or TX)
  * Returns: phyRadioSlotHandlerErr_t
  */
 int32_t phyRadioSlotHandlerSetSlotCur(phyRadioSlotHandler_t *inst, uint8_t slot, phyRadioSlotType_t mode);
 
+/**
+ * Set main slot type (persistent configuration)
+ * Input: phyRadioSlotHandler instance
+ * Input: slot - Slot index to configure
+ * Input: mode - Slot type (IDLE, RX, or TX)
+ * Returns: phyRadioSlotHandlerErr_t
+ */
 int32_t phyRadioSlotHandlerSetSlotMain(phyRadioSlotHandler_t *inst, uint8_t slot, phyRadioSlotType_t mode);
 
 /**
- * Process function call
+ * Process pending timer interrupts and invoke callbacks
  * Input: phyRadioSlotHandler instance
  * Returns: phyRadioSlotHandlerErr_t
  */
 int32_t phyRadioSlotHandlerProcess(phyRadioSlotHandler_t *inst);
 
+/**
+ * Get the current slot type
+ * Input: phyRadioSlotHandler instance
+ * Returns: phyRadioSlotType_t or error code
+ */
 int32_t phyRadioSlotHandlerGetCurSlotType(phyRadioSlotHandler_t *inst);
 
+/**
+ * Restore all slots to their main type configuration
+ * Input: phyRadioSlotHandler instance
+ * Returns: phyRadioSlotHandlerErr_t
+ */
 int32_t phyRadioSlotHandlerRestoreSlots(phyRadioSlotHandler_t *inst);
 
+/**
+ * Reset all slots to IDLE state
+ * Input: phyRadioSlotHandler instance
+ * Returns: phyRadioSlotHandlerErr_t
+ */
 int32_t phyRadioSlotHandlerResetSlots(phyRadioSlotHandler_t *inst);
 
+/**
+ * Handle slot handler events from timer interrupts
+ * Input: phyRadioSlotHandler instance
+ * Input: event - Event type to handle
+ * Input: slot_index - Slot index associated with the event
+ * Returns: phyRadioSlotHandlerErr_t
+ */
 int32_t phyRadioSlotHandlerEventManager(phyRadioSlotHandler_t *inst, phyRadioSlotHandlerEvent_t event, uint16_t slot_index);
 
-int32_t phyRadioSLotHandlerEventInQueue(phyRadioSlotHandler_t *inst);
+/**
+ * Check if there are pending events in the interrupt queue
+ * Input: phyRadioSlotHandler instance
+ * Returns: PHY_RADIO_SLOT_HANDLER_INTERRUPT_QUEUE if events pending, PHY_RADIO_SLOT_HANDLER_SUCCESS otherwise
+ */
+int32_t phyRadioSlotHandlerEventInQueue(phyRadioSlotHandler_t *inst);
 
 #ifdef __cplusplus
 }
