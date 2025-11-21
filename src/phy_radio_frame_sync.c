@@ -23,6 +23,7 @@
 #include "phy_radio_frame_sync.h"
 #include "string.h"
 #include <stdarg.h>
+#include <stdio.h>
 
 // Weakly defined logging function - can be overridden by user
 __attribute__((weak)) void radio_log(const char *format, ...) {
