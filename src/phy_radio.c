@@ -296,7 +296,7 @@ static int32_t sendDuringCb(phyRadio_t *inst, phyRadioTdma_t* tdma_scheduler, ui
 static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t* hal_packet, halRadioErr_t result) {
     phyRadio_t   *inst = CONTAINER_OF(interface, phyRadio_t, hal_interface);
     phyRadioErr_t send_result = PHY_RADIO_SUCCESS;
-    int32_t       cb_res = PHY_RADIO_CB_SUCCESS;
+    int32_t       cb_res = PHY_RADIO_SUCCESS;
 
     // Manage the halRadio result
     switch (result) {
@@ -344,7 +344,7 @@ static int32_t halRadioSentCb(halRadioInterface_t *interface, halRadioPackage_t*
         cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, send_result);
     }
 
-    if (cb_res != PHY_RADIO_CB_SUCCESS) {
+    if (cb_res != PHY_RADIO_SUCCESS) {
         LOG("PHY CB FAILED %i\n", cb_res);
         return cb_res;
     }
@@ -481,30 +481,9 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                 inst->sync_state.central_address = sender_address;
                 int32_t cb_res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_FIRST_SYNC, &inst->sync_state);
 
-                // Manage the callback result
-                switch (cb_res) {
-                    case PHY_RADIO_CB_SET_PERIPHERAL:
-                        // We are allready in peripheral mode
-                        break;
-                    case PHY_RADIO_CB_SUCCESS:
-                        // Return to scan mode
-                    case PHY_RADIO_CB_SET_SCAN: {
-                        // Reset the sync state
-                        inst->sync_state.central_address = 0x00;
-
-                        // Cancel all active timers
-                        if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
-                            return res;
-                        }
-
-                        // Return to scan mode
-                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
-                            return res;
-                        }
-                    } break;
-                    default:
-                        LOG("PHY CB Error 1 %i!\n", cb_res);
-                        return cb_res;
+                if (cb_res != PHY_RADIO_SUCCESS) {
+                    LOG("PHY CB Error 1 %i!\n", cb_res);
+                    return cb_res;
                 }
             }
             // Make sure we stay in RX even if we got something which is not a sync
@@ -538,29 +517,9 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                 // Notify that a resync has been received
                 int32_t cb_res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_RE_SYNC, &inst->sync_state);
 
-                // Manage the callback result
-                switch (cb_res) {
-                    case PHY_RADIO_CB_SUCCESS:
-                    case PHY_RADIO_CB_SET_PERIPHERAL:
-
-                        break;
-                    case PHY_RADIO_CB_SET_SCAN: {
-                        // Reset the sync state
-                        inst->sync_state.central_address = 0x00;
-
-                        // Cancel all active timers
-                        if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
-                            return res;
-                        }
-
-                        // Go to scan mode
-                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
-                            return res;
-                        }
-                    } break;
-                    default:
-                        LOG("PHY CB Error 2 %i!\n", cb_res);
-                        return cb_res;
+                if (cb_res != PHY_RADIO_SUCCESS) {
+                    LOG("PHY CB Error 2 %i!\n", cb_res);
+                    return cb_res;
                 }
 
                 // Notify that the radio should stay in RX mode
@@ -574,67 +533,9 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
                 // Notify that a conflicting sync has been received
                 int32_t cb_res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_CONFLICT_SYNC, &inst->sync_state);
 
-                // Manage the callback result
-                int32_t res = PHY_RADIO_SUCCESS;
-                switch (cb_res) {
-                    case PHY_RADIO_CB_SUCCESS:
-                        break;
-                    case PHY_RADIO_CB_SET_PERIPHERAL: {
-                        // Cancel all active timers
-                        if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
-                            return res;
-                        }
-
-                        // Switch from Central to peripheral, try to sync
-                        int32_t res = phyRadioFrameSyncNewSync(&inst->tdma_scheduler.frame_sync, phy_header_msb, &new_packet, hal_packet);
-                        if (res != PHY_RADIO_SUCCESS) {
-                            LOG("SYNC FAILED! %i\n", res);
-                            return res;
-                        }
-
-                        // New frame detected, new sync detected
-                        inst->tdma_scheduler.sync_counter = 0;
-                        phyRadioFrameSyncResetFrameCounter(&inst->tdma_scheduler.frame_sync);
-
-                        // Notify that a device has been found
-                        inst->sync_state.sync_slot_number = PHY_RADIO_PERIPHERAL_RX_SLOT;
-                        inst->sync_state.central_address  = sender_address;
-
-                        // A peripheral device must have at least one RX slot to listen on syncs
-                        res = phyRadioSlotHandlerSetSlotMain(&inst->tdma_scheduler.slot_handler, PHY_RADIO_PERIPHERAL_RX_SLOT, PHY_RADIO_SLOT_RX);
-                        if (res != PHY_RADIO_SLOT_HANDLER_SUCCESS) {
-                            return res;
-                        }
-
-                        res = phyRadioSlotHandlerSetSlotCur(&inst->tdma_scheduler.slot_handler, PHY_RADIO_PERIPHERAL_RX_SLOT, PHY_RADIO_SLOT_RX);
-                        if (res != PHY_RADIO_SLOT_HANDLER_SUCCESS) {
-                            return res;
-                        }
-
-                        // Set peripheral mode
-                        inst->sync_state.mode = PHY_RADIO_MODE_PERIPHERAL;
-
-                        res = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_PERIPHERAL);
-                        if (res != PHY_RADIO_FRAME_SYNC_SUCCESS) {
-                            return res;
-                        }
-                    } break;
-                    case PHY_RADIO_CB_SET_SCAN: {
-                        // Reset the sync state
-                        inst->sync_state.central_address = 0x00;
-                        // Cancel all active timers
-                        if ((res = cancelAllTimers(inst)) != PHY_RADIO_SUCCESS) {
-                            return res;
-                        }
-
-                        // Go to scan mode
-                        if ((res = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
-                            return res;
-                        }
-                    } break;
-                    default:
-                        LOG("PHY CB Error 3 %i!\n", cb_res);
-                        return cb_res;
+                if (cb_res != PHY_RADIO_SUCCESS) {
+                    LOG("PHY CB Error 3 %i!\n", cb_res);
+                    return cb_res;
                 }
 
                 // Notify that the radio should stay in RX mode
@@ -645,7 +546,7 @@ static int32_t halRadioPackageCb(halRadioInterface_t *interface, halRadioPackage
             // Notify that a new packet has arrived
             int32_t cb_res = inst->interface->packet_cb(inst->interface, &new_packet);
             // If the callback returns bad values stop and return errors
-            if (cb_res != PHY_RADIO_CB_SUCCESS) {
+            if (cb_res != PHY_RADIO_SUCCESS) {
                 LOG("PHY CB Error 4 %i!\n", cb_res);
                 return cb_res;
             }
@@ -807,7 +708,7 @@ static int32_t clearAndNotifyPacketQueueInSlot(phyRadio_t *inst, phyRadioTdma_t 
 
         // Notify that the packet failed
         if (phy_packet->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
-            if ((res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+            if ((res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_SUCCESS) {
                 return res;
             }
         }
@@ -823,7 +724,7 @@ static int32_t clearAndNotifyPacketQueue(phyRadio_t *inst, phyRadioTdma_t *sched
     if (scheduler->in_flight && (scheduler->active_item != NULL)) {
         // Notify that the active packet failed
         if (scheduler->active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
-            if ((res = inst->interface->sent_cb(inst->interface, scheduler->active_item, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+            if ((res = inst->interface->sent_cb(inst->interface, scheduler->active_item, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_SUCCESS) {
                 return res;
             }
         }
@@ -844,7 +745,7 @@ static int32_t clearAndNotifyPacketQueue(phyRadio_t *inst, phyRadioTdma_t *sched
 
         // Notify that the packet failed
         if (phy_packet->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
-            if ((res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+            if ((res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_SUCCESS) {
                 return res;
             }
         }
@@ -1016,7 +917,7 @@ static int32_t processCentral(phyRadio_t *inst) {
             }
 
             // Notify that a new TX slot has started
-            if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_TX_SLOT_START, &inst->sync_state)) < PHY_RADIO_CB_SUCCESS) {
+            if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_TX_SLOT_START, &inst->sync_state)) < PHY_RADIO_SUCCESS) {
                 return res;
             }
         } break;
@@ -1030,7 +931,7 @@ static int32_t processCentral(phyRadio_t *inst) {
                     // TODO what should we do about this
                     LOG("SYNC MESSAGE SEND FAILED\n");
                 } else {
-                    if ((res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+                    if ((res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_SUCCESS) {
                         return res;
                     }
                 }
@@ -1039,7 +940,7 @@ static int32_t processCentral(phyRadio_t *inst) {
             }
 
             // Notify that a new RX slot has started
-            if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_RX_SLOT_START, &inst->sync_state)) < PHY_RADIO_CB_SUCCESS) {
+            if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_RX_SLOT_START, &inst->sync_state)) < PHY_RADIO_SUCCESS) {
                 return res;
             }
         break;
@@ -1079,29 +980,9 @@ static int32_t processPeripheral(phyRadio_t *inst) {
         int32_t cb_res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_SYNC_LOST, &inst->sync_state);
 
         // Manage the callback result
-        switch (cb_res) {
-            case PHY_RADIO_CB_SET_SCAN: {
-                // Reset the sync state
-                inst->sync_state.central_address = 0x00;
-
-                // Set scan mode
-                if ((result = phyRadioFrameSyncSetMode(&inst->tdma_scheduler.frame_sync, PHY_RADIO_FRAME_SYNC_MODE_SCAN)) != PHY_RADIO_SUCCESS) {
-                    return result;
-                }
-
-                // Go to scan mode
-                if ((result = phyRadioSetScanMode(inst, inst->tdma_scheduler.scan_timeout_ms)) != PHY_RADIO_SUCCESS) {
-                    return result;
-                }
-            } break;
-            case PHY_RADIO_CB_SET_PERIPHERAL:
-                // Stay in peripheral mode
-                break;
-            case PHY_RADIO_CB_SUCCESS:
-                break;
-            default:
-                LOG("PHY CB Error 5 %i!\n", cb_res);
-                return cb_res;
+        if (cb_res != PHY_RADIO_SUCCESS) {
+            LOG("PHY CB Error 5 %i!\n", cb_res);
+            return cb_res;
         }
 
         return PHY_RADIO_SUCCESS;
@@ -1132,7 +1013,7 @@ static int32_t processPeripheral(phyRadio_t *inst) {
                     LOG("SYNC MESSAGE SEND FAILED\n");
                 } else {
                     // External packet lost
-                    if ((res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+                    if ((res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_SUCCESS) {
                         return res;
                     }
                 }
@@ -1342,7 +1223,7 @@ static int32_t clearSlotCallback(staticQueue_t *queue, staticQueueItem_t *item) 
         // Notify that the packet send failed
         if (phy_packet->type != PHY_RADIO_PKT_INTERNAL_SYNC) {
             int32_t res = inst->interface->sent_cb(inst->interface, phy_packet, PHY_RADIO_SEND_FAIL);
-            if (res != PHY_RADIO_CB_SUCCESS) {
+            if (res != PHY_RADIO_SUCCESS) {
                 return res;
             }
         }
@@ -1414,7 +1295,7 @@ int32_t phyRadioSlotHandlerCallback(phyRadio_t *inst, phyRadioSlotHandlerEvent_t
             }
 
             // Notify that a new frame has started
-            if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_FRAME_START, &inst->sync_state)) < PHY_RADIO_CB_SUCCESS) {
+            if ((res = inst->interface->sync_state_cb(inst->interface, PHY_RADIO_FRAME_START, &inst->sync_state)) < PHY_RADIO_SUCCESS) {
                 return res;
             }
         } break;
@@ -1434,7 +1315,7 @@ int32_t phyRadioSlotHandlerCallback(phyRadio_t *inst, phyRadioSlotHandlerEvent_t
         } break;
         case SLOT_HANDLER_SLOT_END_GUARD_EVENT: {
             // Manage the end guard
-            int32_t cb_res = PHY_RADIO_CB_SUCCESS;
+            int32_t cb_res = PHY_RADIO_SUCCESS;
             // Check if we have any active packet in flight, inform higher layer that send failed
             if (inst->tdma_scheduler.in_flight && (inst->tdma_scheduler.active_item->type != PHY_RADIO_PKT_INTERNAL_SYNC)) {
                 cb_res = inst->interface->sent_cb(inst->interface, inst->tdma_scheduler.active_item, PHY_RADIO_SEND_FAIL);
@@ -1936,7 +1817,7 @@ int32_t phyRadioRemoveFromSlot(phyRadio_t *inst, phyRadioPacket_t *pkt) {
 
     // Notify that the packet send failed, if it was removed
     if (pkt->type != PHY_RADIO_PKT_INTERNAL_SYNC && res == STATIC_QUEUE_SUCCESS) {
-        if ((res = inst->interface->sent_cb(inst->interface, pkt, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_CB_SUCCESS) {
+        if ((res = inst->interface->sent_cb(inst->interface, pkt, PHY_RADIO_SEND_FAIL)) != PHY_RADIO_SUCCESS) {
             return res;
         }
     }

@@ -155,7 +155,7 @@ static int32_t phyPacketCallback(phyRadioInterface_t *interface, phyRadioPacket_
     }
     LOG("\n\n");
 
-    return PHY_RADIO_CB_SUCCESS;
+    return PHY_RADIO_SUCCESS;
 }
 
 static int32_t phyPacketSent(phyRadioInterface_t *interface, phyRadioPacket_t *packet, phyRadioErr_t result) {
@@ -170,7 +170,7 @@ static int32_t phyPacketSent(phyRadioInterface_t *interface, phyRadioPacket_t *p
 
     // The packet is now available
     inst->available = true;
-    return PHY_RADIO_CB_SUCCESS;
+    return PHY_RADIO_SUCCESS;
 }
 
 static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, const phyRadioSyncState_t *sync_state) {
@@ -208,10 +208,10 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
             break;
         default:
             // We should never end up here!
-            return PHY_RADIO_CB_ERROR_INVALID;
+            return PHY_RADIO_GEN_ERROR;
     }
 
-    return PHY_RADIO_CB_SUCCESS;
+    return PHY_RADIO_SUCCESS;
 }
 
 int main()

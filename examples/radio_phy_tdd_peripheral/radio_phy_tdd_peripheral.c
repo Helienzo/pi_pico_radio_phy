@@ -152,7 +152,7 @@ static int32_t phyPacketCallback(phyRadioInterface_t *interface, phyRadioPacket_
     }
     LOG("\n\n");
 
-    return PHY_RADIO_CB_SUCCESS;
+    return PHY_RADIO_SUCCESS;
 }
 
 static int32_t phyPacketSent(phyRadioInterface_t *interface, phyRadioPacket_t *packet, phyRadioErr_t result) {
@@ -167,12 +167,11 @@ static int32_t phyPacketSent(phyRadioInterface_t *interface, phyRadioPacket_t *p
 
     // The packet is now available
     inst->available = true;
-    return PHY_RADIO_CB_SUCCESS;
+    return PHY_RADIO_SUCCESS;
 }
 
 static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, const phyRadioSyncState_t *sync_state) {
     myInstance_t * inst = CONTAINER_OF(interface, myInstance_t, phy_interface);
-    int32_t retval = PHY_RADIO_SUCCESS;
 
     switch (sync_id) {
         case PHY_RADIO_SYNC_SENT:
@@ -194,7 +193,6 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            }
 
            // Set peripheral mode
-           retval = PHY_RADIO_CB_SET_PERIPHERAL;
            LOG("SYNCHRONIZED!\n");
            } break;
         case PHY_RADIO_RE_SYNC:
@@ -207,14 +205,17 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
            LOG("SYNC CONFLICT!\n");
            // Called if a sync from another central device is heard
            break;
-        case PHY_RADIO_SYNC_LOST:
+        case PHY_RADIO_SYNC_LOST: {
            // Called no sync has been heard for X frames
            inst->test_led_state = false;
            pico_set_led(inst->test_led_state);
            // Return to scan mode
-           retval = PHY_RADIO_CB_SET_SCAN;
+           int32_t res = phyRadioSetScanMode(&inst->phy_radio_inst, SCAN_TIMEOUT_MS);
+           if (res != PHY_RADIO_SUCCESS) {
+               return res;
+           }
            LOG("SYNC LOST!\n");
-           break;
+        } break;
         case PHY_RADIO_RX_SLOT_START:
            // Called once every time a new RX slot starts
            break;
@@ -233,10 +234,10 @@ static int32_t phySyncStateCb(phyRadioInterface_t *interface, uint32_t sync_id, 
             break;
         default:
             // We should never end up here!
-            return PHY_RADIO_CB_ERROR_INVALID;
+            return PHY_RADIO_GEN_ERROR;
     }
 
-    return retval;
+    return PHY_RADIO_SUCCESS;
 }
 
 int main()

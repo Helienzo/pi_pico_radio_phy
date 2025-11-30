@@ -101,14 +101,6 @@ typedef enum {
 } phyRadioErr_t;
 
 typedef enum {
-    PHY_RADIO_CB_SET_SCAN       = 2,
-    PHY_RADIO_CB_SET_PERIPHERAL = 1, // Notify that the callback completed successfully
-    PHY_RADIO_CB_SUCCESS        = 0,        // Notify that the callback completed successfully
-    PHY_RADIO_CB_ERROR          = -20050, // Notify that an error occured inside of the callback
-    PHY_RADIO_CB_ERROR_INVALID  = -20051, // Notify that the callback was called with invalid params
-} phyRadioCbRetVal_t;
-
-typedef enum {
     PHY_RADIO_SYNC_SENT = 1, // On sync sent during central mode
     PHY_RADIO_FIRST_SYNC,    // On first sync when in scan
     PHY_RADIO_RE_SYNC,       // On new sync message during peripheral mode
