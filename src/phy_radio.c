@@ -1381,16 +1381,16 @@ int32_t phyRadioSlotHandlerCallback(phyRadio_t *inst, phyRadioSlotHandlerEvent_t
             break;
         case SLOT_HANDLER_START_EVENT:
             break;
-        case SLOT_HANDLER_NEW_FRAME_SYNC_SENT_EVENT:
-            inst->tdma_scheduler.in_flight = true;
-            // Fall through
-        case SLOT_HANDLER_NEW_FRAME_EVENT: {
+       case SLOT_HANDLER_NEW_FRAME_EVENT: {
             inst->tdma_scheduler.current_slot = slot_index;
             int32_t res = PHY_RADIO_SUCCESS;
             if ((res = phyRadioManageFrameGuardStart(inst)) != PHY_RADIO_SUCCESS) {
                 return res;
             }
         } break;
+        case SLOT_HANDLER_NEW_FRAME_SYNC_SENT_EVENT:
+            inst->tdma_scheduler.in_flight = true;
+            // Fall through
         case SLOT_HANDLER_FIRST_SLOT_START_EVENT: {
             // Main context processing of a frame start
             int32_t res = PHY_RADIO_SUCCESS;
