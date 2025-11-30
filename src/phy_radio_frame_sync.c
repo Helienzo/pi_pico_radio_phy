@@ -80,6 +80,8 @@ static int32_t new_frame_callback(phyRadioTimer_t *interface) {
 
     if (halRadioCheckBusy(inst->hal_radio_inst) == HAL_RADIO_BUSY) {
         inst->timer_interrupt = PHY_RADIO_FRAME_SYNC_INT_NEW_FRAME;
+        // If there is any incomming data now, it must be aborted
+        halRadioSetRxAbort(inst->hal_radio_inst);
     } else {
         // Manage the slot
         int32_t res = phyRadioSlotHandlerEventManager(inst->slot_handler, SLOT_HANDLER_NEW_FRAME_EVENT, 0);
